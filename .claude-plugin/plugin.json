@@ -1,0 +1,13 @@
+{
+  "name": "kodexa-metadata-skills",
+  "description": "Skills for authoring Kodexa platform metadata: data definitions, project templates, modules, data forms, assistants, and more",
+  "version": "1.0.0",
+  "author": {
+    "name": "Kodexa",
+    "email": "support@kodexa.com"
+  },
+  "homepage": "https://developer.kodexa.ai",
+  "repository": "https://github.com/kodexa-ai/kodexa-metadata-skills",
+  "license": "MIT",
+  "keywords": ["kodexa", "metadata", "data-definitions", "project-templates", "modules", "data-forms", "assistants", "knowledge-system", "taxonomy"]
+}

@@ -1,0 +1,20 @@
+{
+  "name": "kodexa-metadata",
+  "description": "Skills for authoring Kodexa platform metadata",
+  "owner": {
+    "name": "Kodexa",
+    "email": "support@kodexa.com"
+  },
+  "plugins": [
+    {
+      "name": "kodexa-metadata-skills",
+      "description": "Skills for authoring Kodexa platform metadata: data definitions, project templates, modules, data forms, assistants, and more",
+      "version": "1.0.0",
+      "source": "./",
+      "author": {
+        "name": "Kodexa",
+        "email": "support@kodexa.com"
+      }
+    }
+  ]
+}
