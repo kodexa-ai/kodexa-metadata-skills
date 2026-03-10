@@ -15,6 +15,7 @@ A [Claude Code](https://claude.ai/claude-code) plugin providing skills for autho
 | **knowledge-system** | Feature types, item types, knowledge sets — rule-based processing customization with DNF expressions |
 | **service-bridge** | External API proxy endpoints — centralized authentication, header management, caching |
 | **prompt-template** | LLM prompt configurations — extraction prompts, system prompts, knowledge-driven overrides |
+| **kdx-cli** | Kodexa CLI — kubectl-style commands, profile management, sync/deploy workflows, resource operations |
 
 ## Installation
 
@@ -78,6 +79,10 @@ When editing existing metadata or debugging issues, the skill loads the complete
 **service-bridge** — Author service bridge YAML for external API integration. Covers authentication patterns (API key, Bearer, Basic), endpoint mapping, caching configuration, and usage from modules and forms.
 
 **prompt-template** — Author LLM prompt templates. Covers standalone YAML prompts and skill module embedded prompts, variable placeholders, output format configuration, and integration with the knowledge system for per-vendor prompt overrides.
+
+### CLI & Operations
+
+**kdx-cli** — Use the Kodexa CLI (`kdx`) for platform operations. Covers profile management, resource CRUD (get, describe, apply, delete), sync/deploy workflows with `sync-config.yaml` and manifests, branch-mapped GitOps deployments, Python dataclass generation, and troubleshooting.
 
 ## Documentation
 
