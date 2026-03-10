@@ -8,6 +8,6 @@
   },
   "homepage": "https://developer.kodexa.ai",
   "repository": "https://github.com/kodexa-ai/kodexa-metadata-skills",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "keywords": ["kodexa", "metadata", "data-definitions", "project-templates", "modules", "data-forms", "assistants", "knowledge-system", "taxonomy"]
 }
