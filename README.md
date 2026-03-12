@@ -19,13 +19,20 @@ A [Claude Code](https://claude.ai/claude-code) plugin providing skills for autho
 
 ## Installation
 
-Install the plugin in Claude Code:
+Add the marketplace and install the plugin in Claude Code:
 
 ```bash
-claude install kodexa-ai/kodexa-metadata-skills
+claude plugin marketplace add kodexa-ai/kodexa-metadata-skills
+claude plugin install kodexa-metadata-skills
 ```
 
 After installation, the skills are automatically available in all Claude Code sessions.
+
+For development/testing, you can also load the plugin directly from a local directory:
+
+```bash
+claude --plugin-dir /path/to/kodexa-metadata-skills
+```
 
 ## Usage
 
