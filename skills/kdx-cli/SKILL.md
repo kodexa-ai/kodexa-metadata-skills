@@ -81,8 +81,8 @@ kdx get workspaces
 kdx get projects
 kdx get modules
 
-# Get a specific resource by name
-kdx get workspace my-workspace
+# Get a specific resource by UUID
+kdx get data-definition 1d646f5f-7a8a-4458-9a92-1b6aeac329c2
 
 # Output as JSON or YAML
 kdx get projects -o json
@@ -93,6 +93,8 @@ kdx get projects --filter-name my-filter
 ```
 
 Resource types are dynamically discovered — use `kdx api-resources` to see all available types.
+
+**Important:** `kdx get <resource> <name>` looks up by UUID, not slug. To filter by slug, name, org, or other fields use `kdx run` with the list operation and `--filter` (see below).
 
 ---
 
@@ -137,9 +139,9 @@ kdx delete project my-project --force
 
 ---
 
-### run — Execute API Operations
+### run — Execute API Operations & Filtered Lookups
 
-Discover and invoke additional API operations beyond standard CRUD. Some resource types (like knowledge sets) only support operations via `kdx run`, not `kdx get`.
+Discover and invoke additional API operations beyond standard CRUD. **This is also the way to filter resources by slug, name, org, or other fields** — `kdx get` does not support inline filters. Some resource types (like knowledge sets) only support operations via `kdx run`, not `kdx get`.
 
 ```bash
 # List available operations for a resource type
@@ -148,6 +150,38 @@ kdx run projects
 # Execute an operation
 kdx run projects test --projectId 123 --body '{"hello":"world"}'
 ```
+
+#### Filtered Resource Lookups (via `kdx run`)
+
+Most resource types expose a `list-*` operation that supports `--filter` with SpringFilter DSL syntax. Use this instead of `kdx get` when you need to find a specific resource by slug, name, or org.
+
+```bash
+# Data definitions (taxonomies)
+kdx run data-definitions list-taxonomies --filter "slug:'my-taxonomy-slug'" -o yaml
+kdx run data-definitions list-taxonomies --filter "name:'My Taxonomy Name'" -o yaml
+kdx run data-definitions list-taxonomies --filter "orgSlug:'my-org'" -o yaml
+
+# Data forms
+kdx run data-forms list-data-forms --filter "slug:'my-form-slug'" -o yaml
+kdx run data-forms list-data-forms --filter "name:'My Form Name'" -o yaml
+
+# Data stores
+kdx run data-stores list-data-stores --filter "slug:'my-store-slug'" -o yaml
+
+# Modules
+kdx run modules list-modules --filter "slug:'my-module'" -o yaml
+kdx run modules list-modules --filter "orgSlug:'my-org'" -o yaml
+
+# Combine filters with 'and'
+kdx run data-definitions list-taxonomies --filter "orgSlug:'my-org' and name~'*Invoice*'" -o yaml
+
+# Pagination and sorting
+kdx run data-definitions list-taxonomies --filter "orgSlug:'my-org'" --pageSize 50 --sort "name:asc" -o yaml
+```
+
+**Filter operators:** `:` (equals), `!` (not equal), `~` (like/wildcard), `>`, `<`, `>=`, `<=`, `and`, `or`, `not()`.
+
+**Discover available operations:** Run `kdx run <resource-type>` with no operation name to see all operations and their parameters.
 
 #### Knowledge Sets (via `kdx run`)
 
@@ -623,14 +657,17 @@ kdx sync deploy --output-json deploy-report.json  # Then deploy
 | Knowledge set apply fails with FK violation | Apply dependencies first: feature types, then item types, then the knowledge set |
 | Reprocess does nothing | `--assistant-id` is required — without it documents get stuck in pending |
 | Reprocess no matches | Check filter syntax; use `--dry-run` to debug |
+| `kdx get` returns all resources, need just one | Use `kdx run <resource> list-<operation> --filter "slug:'my-slug'"` for filtered lookups |
 
 ## Common Mistakes
 
 | Mistake | Fix |
 |---------|-----|
 | Forgetting `-f` flag on apply | Must be `kdx apply -f file.yaml`, not `kdx apply file.yaml` |
+| Using `--filter` with `kdx get` | `kdx get` has no `--filter` flag — use `kdx run <resource> list-<op> --filter` instead |
+| Trying to `kdx get` a resource by slug | `kdx get <resource> <name>` expects UUID, not slug — use `kdx run` with `--filter "slug:'...'"` for slug-based lookups |
 | Using `kdx get` for knowledge sets | Knowledge sets require `kdx run knowledge-sets list-knowledge-set`, not `kdx get knowledge-sets` |
-| Using wrong resource type name | Resource names are plural for listing (`kdx get modules`), singular for specific (`kdx get module my-mod`) |
+| Using wrong resource type name | Resource names are plural for listing (`kdx get modules`), singular for specific (`kdx get module <uuid>`) |
 | Applying knowledge set before its dependencies | Feature types and item types must exist in the target env before applying a knowledge set that references them |
 | Missing `schema_version: "2.0"` in sync-config | Required field — add it at the top of sync-config.yaml |
 | Missing `manifest_version: "1.0"` in manifest | Required field — add it at the top of manifest files |
