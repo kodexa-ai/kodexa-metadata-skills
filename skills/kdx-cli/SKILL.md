@@ -139,7 +139,7 @@ kdx delete project my-project --force
 
 ### run — Execute API Operations
 
-Discover and invoke additional API operations beyond standard CRUD.
+Discover and invoke additional API operations beyond standard CRUD. Some resource types (like knowledge sets) only support operations via `kdx run`, not `kdx get`.
 
 ```bash
 # List available operations for a resource type
@@ -147,6 +147,48 @@ kdx run projects
 
 # Execute an operation
 kdx run projects test --projectId 123 --body '{"hello":"world"}'
+```
+
+#### Knowledge Sets (via `kdx run`)
+
+**Important:** Knowledge sets must be accessed via `kdx run knowledge-sets`, NOT `kdx get knowledge-sets` (the list operation is not available on the get endpoint).
+
+```bash
+# List all knowledge sets
+kdx run knowledge-sets list-knowledge-set
+
+# Filter by organization
+kdx run knowledge-sets list-knowledge-set --orgSlug my-org
+
+# Filter by project (name or slug)
+kdx run knowledge-sets list-knowledge-set --filter "project.slug:'my-project'"
+kdx run knowledge-sets list-knowledge-set --filter "project.name:'My Project Name'"
+
+# Filter by knowledge set slug (useful for exporting a single set)
+kdx run knowledge-sets list-knowledge-set --orgSlug my-org --filter "slug:'my-knowledge-set-slug'"
+
+# Filter by name with wildcards
+kdx run knowledge-sets list-knowledge-set --orgSlug my-org --filter "name~'*Water*'"
+
+# Combine org and project filters
+kdx run knowledge-sets list-knowledge-set --orgSlug my-org --filter "project.slug:'my-project'"
+
+# Export to YAML
+kdx run knowledge-sets list-knowledge-set --orgSlug my-org --filter "slug:'my-slug'" -o yaml > my-knowledge-set.yaml
+
+# Get a single knowledge set by ID
+kdx run knowledge-sets get-knowledge-set --id <uuid> -o yaml > file.yaml
+
+# Use a specific profile
+kdx run knowledge-sets list-knowledge-set --profile my-prod
+```
+
+**Knowledge item types** (organization-level, accessed via `kdx get`):
+
+```bash
+# List item types
+kdx get knowledge-item-types
+kdx get knowledge-item-types -o yaml > item-types.yaml
 ```
 
 ---
@@ -519,6 +561,40 @@ kdx store reprocess my-org/my-store:1.0.0 \
 kdx store watch <family-id>
 ```
 
+### Export & Import Knowledge Sets Between Environments
+
+Knowledge sets have dependencies that must be applied in order:
+
+```
+1. Knowledge feature types   (org-level, no dependencies, immutable once created)
+2. Knowledge item types      (org-level, no dependencies)
+3. Knowledge set             (includes features, items, and clauses)
+```
+
+```bash
+# 1. Export from source environment
+kdx config use-profile my-uat
+kdx run knowledge-sets list-knowledge-set \
+  --orgSlug my-org \
+  --filter "slug:'my-knowledge-set'" \
+  -o yaml > my-knowledge-set.yaml
+
+# 2. Export dependencies (item types)
+kdx get knowledge-item-types -o yaml > item-types.yaml
+
+# 3. Apply to target environment (in dependency order)
+kdx config use-profile my-prod
+kdx apply -f item-types.yaml          # Item types first
+kdx apply -f my-knowledge-set.yaml    # Knowledge set second
+
+# 4. Verify
+kdx run knowledge-sets list-knowledge-set --profile my-prod
+```
+
+**Moving to a different project:** Edit the exported YAML to update the `project` section (id and name) and `organization` section. Remove server-generated fields (`id`, `changeSequence`, `createdOn`, `updatedOn`, `searchText`) from the top level and from each nested feature/item before applying.
+
+**Tip:** Find the target project ID with `kdx get projects -o yaml`.
+
 ### CI/CD Pipeline Deploy
 
 ```bash
@@ -543,6 +619,8 @@ kdx sync deploy --output-json deploy-report.json  # Then deploy
 | Production confirmation blocking CI | Use `--skip-production-confirm` (logs bypass for audit) |
 | Module code not uploading | Ensure `metadata.contents` globs in module YAML match your files |
 | Stale resource types | Run `kdx api-resources --refresh` to re-fetch from server |
+| `list operation not available` for knowledge sets | Use `kdx run knowledge-sets list-knowledge-set` instead of `kdx get knowledge-sets` |
+| Knowledge set apply fails with FK violation | Apply dependencies first: feature types, then item types, then the knowledge set |
 | Reprocess does nothing | `--assistant-id` is required — without it documents get stuck in pending |
 | Reprocess no matches | Check filter syntax; use `--dry-run` to debug |
 
@@ -551,7 +629,9 @@ kdx sync deploy --output-json deploy-report.json  # Then deploy
 | Mistake | Fix |
 |---------|-----|
 | Forgetting `-f` flag on apply | Must be `kdx apply -f file.yaml`, not `kdx apply file.yaml` |
+| Using `kdx get` for knowledge sets | Knowledge sets require `kdx run knowledge-sets list-knowledge-set`, not `kdx get knowledge-sets` |
 | Using wrong resource type name | Resource names are plural for listing (`kdx get modules`), singular for specific (`kdx get module my-mod`) |
+| Applying knowledge set before its dependencies | Feature types and item types must exist in the target env before applying a knowledge set that references them |
 | Missing `schema_version: "2.0"` in sync-config | Required field — add it at the top of sync-config.yaml |
 | Missing `manifest_version: "1.0"` in manifest | Required field — add it at the top of manifest files |
 | Relative paths in manifest wrong | Paths are relative to the manifest file location |
