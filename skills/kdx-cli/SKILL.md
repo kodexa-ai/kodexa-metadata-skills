@@ -88,7 +88,7 @@ kdx get data-definition 1d646f5f-7a8a-4458-9a92-1b6aeac329c2
 kdx get projects -o json
 kdx get modules -o yaml
 
-# Apply a named filter from configuration
+# Apply a named preset filter from configuration (NOT an inline filter expression)
 kdx get projects --filter-name my-filter
 ```
 
@@ -106,6 +106,8 @@ kdx describe workspace my-workspace
 kdx describe project my-project
 kdx describe module kodexa/my-module
 ```
+
+**Note:** `describe` uses the same resource type names as `get` (e.g., `data-definition`, not `taxonomy`). Use `kdx api-resources` if unsure of the correct type name.
 
 ---
 
@@ -181,7 +183,7 @@ kdx run data-definitions list-taxonomies --filter "orgSlug:'my-org'" --pageSize 
 
 **Filter operators:** `:` (equals), `!` (not equal), `~` (like/wildcard), `>`, `<`, `>=`, `<=`, `and`, `or`, `not()`.
 
-**Discover available operations:** Run `kdx run <resource-type>` with no operation name to see all operations and their parameters.
+**Operation naming:** The operation names don't always match the resource type name. For example, `data-definitions` uses `list-taxonomies` (not `list-data-definitions`). Always run `kdx run <resource-type>` with no operation name to discover the correct operation names and their parameters.
 
 #### Knowledge Sets (via `kdx run`)
 
@@ -668,6 +670,9 @@ kdx sync deploy --output-json deploy-report.json  # Then deploy
 | Trying to `kdx get` a resource by slug | `kdx get <resource> <name>` expects UUID, not slug — use `kdx run` with `--filter "slug:'...'"` for slug-based lookups |
 | Using `kdx get` for knowledge sets | Knowledge sets require `kdx run knowledge-sets list-knowledge-set`, not `kdx get knowledge-sets` |
 | Using wrong resource type name | Resource names are plural for listing (`kdx get modules`), singular for specific (`kdx get module <uuid>`) |
+| Using `taxonomy` instead of `data-definition` | The resource type is `data-definition`/`data-definitions`, not `taxonomy`. Similarly use `data-form`, not `form`. Check `kdx api-resources` for correct names |
+| Using `--filter-name` for inline filters | `--filter-name` looks up a named preset from config, not an inline filter expression — use `kdx run` with `--filter` instead |
+| Wrong `kdx run` operation name | Operation names don't always match the resource type — e.g., `data-definitions` uses `list-taxonomies`. Run `kdx run <resource>` to discover operation names |
 | Applying knowledge set before its dependencies | Feature types and item types must exist in the target env before applying a knowledge set that references them |
 | Missing `schema_version: "2.0"` in sync-config | Required field — add it at the top of sync-config.yaml |
 | Missing `manifest_version: "1.0"` in manifest | Required field — add it at the top of manifest files |
