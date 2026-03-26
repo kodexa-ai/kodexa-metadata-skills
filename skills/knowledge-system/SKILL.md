@@ -15,6 +15,45 @@ The Kodexa knowledge system connects **what you know** about documents (features
 
 **Important**: Feature types and item types are **immutable** — they cannot be updated or deleted once created. Plan carefully before creating them.
 
+## CRITICAL: Feature Instance Slug Computation
+
+**Feature instance slugs are NOT human-friendly names.** They are deterministic, content-addressable identifiers computed from the feature type slug and the properties hash. You MUST compute them correctly.
+
+### Algorithm
+
+```
+slug = "{featureTypeSlug}-{sha256(canonicalJSON(properties))[:32]}"
+```
+
+Steps:
+1. Take only the `properties` (NOT `extendedProperties`) as a key-value map
+2. Serialize to canonical JSON with keys sorted alphabetically (e.g., `{"shipperCode":"1414"}`)
+3. Compute SHA-256 hash of the UTF-8 bytes
+4. Take the first 16 bytes (32 hex characters) of the hash
+5. Prepend the feature type slug with a hyphen: `{featureTypeSlug}-{hash}`
+
+### Examples
+
+| Feature Type | Properties | Correct Slug |
+|---|---|---|
+| `shipper` | `{"shipperCode":"1420"}` | `shipper-265c8ff7acae5ecf2ff06935d99f7d0b` |
+| `shipper` | `{"shipperCode":"1414"}` | `shipper-29d437b464f465e0a09a7fd4de6edfd4` |
+| `vendor` | `{"vendorId":"ACME-001","vendorCategory":"preferred"}` | `vendor-c410a049207c974c9a4907e1fa008cc0` |
+
+### How to compute
+
+Use this shell command to compute the hash portion:
+```bash
+echo -n '{"shipperCode":"1414"}' | shasum -a 256 | cut -c1-32
+```
+Then prepend: `shipper-` + result = `shipper-29d437b464f465e0a09a7fd4de6edfd4`
+
+**NEVER use human-friendly slugs** like `shipper-1414-sbd` or `acme-corp` for feature instances. The platform auto-computes these slugs and will not match a manually invented slug.
+
+The same computed slug must appear in BOTH:
+1. `features[].slug` — the feature instance definition
+2. `featureExpression` FEATURE nodes — the `slug` field referencing that feature
+
 ## When to Use
 
 - Defining document characteristics that vary across document types or vendors
@@ -143,19 +182,20 @@ priority: 5                           # 0-10, higher = applied first
 status: ACTIVE                        # PENDING_REVIEW, ACTIVE
 
 # Feature instances used in this set
+# IMPORTANT: Feature slugs are computed as {featureTypeSlug}-{sha256(properties)[:32]}
 features:
-  - slug: acme-corp
+  - slug: vendor-c410a049207c974c9a4907e1fa008cc0  # Computed from properties hash
     featureTypeRef: "my-org/vendor"    # Reference to feature type
-    properties:                        # Core option values
+    properties:                        # Core option values (included in hash)
       vendorId: "ACME-001"
       vendorCategory: "preferred"
-    extendedProperties:                # Extended option values
+    extendedProperties:                # Extended option values (NOT in hash)
       displayName: "Acme Corporation"
       website: "https://acme.com"
     active: true
     uuid: "feat-uuid-1"               # UUID for clause references
 
-  - slug: globex-inc
+  - slug: vendor-fc0427f8993d7dcaa1156510165a4f21  # Computed from properties hash
     featureTypeRef: "my-org/vendor"
     properties:
       vendorId: "GLOBEX-002"
@@ -189,16 +229,14 @@ clauses:
       - featureUuid: "feat-uuid-2"
         positive: true
 
-# Feature expression (alternative to clauses - tree-based)
+# Feature expression (tree-based matching using computed feature slugs)
 featureExpression:
   type: OR
   children:
     - type: FEATURE
-      featureUuid: "feat-uuid-1"
-      positive: true
+      slug: vendor-c410a049207c974c9a4907e1fa008cc0
     - type: FEATURE
-      featureUuid: "feat-uuid-2"
-      positive: true
+      slug: vendor-fc0427f8993d7dcaa1156510165a4f21
 ```
 
 ## DNF Expression Logic
@@ -370,6 +408,8 @@ itemTypes:
     icon: "chat"
 
 # === Knowledge Set ===
+# Feature slugs are computed: {featureTypeSlug}-{sha256(canonicalJSON(properties))[:32]}
+# echo -n '{"vendorId":"ACME"}' | shasum -a 256 | cut -c1-32 → 73182a7521dfac20a3a18c2a4ec549c8
 knowledgeSets:
   - slug: vendor-prompts
     name: "Vendor-Specific Prompts"
@@ -377,7 +417,7 @@ knowledgeSets:
     active: true
     priority: 7
     features:
-      - slug: acme
+      - slug: vendor-73182a7521dfac20a3a18c2a4ec549c8  # Computed from properties
         featureTypeRef: "my-org/vendor"
         properties:
           vendorId: "ACME"
@@ -394,20 +434,24 @@ knowledgeSets:
             Extract Acme's invoice number in format ACME-YYYY-NNNNN.
             Located in the top-right header area.
         sequenceOrder: 1
-    clauses:
-      - features:
-          - featureUuid: "acme-uuid"
-            positive: true
+    featureExpression:
+      type: AND
+      children:
+        - type: FEATURE
+          slug: vendor-73182a7521dfac20a3a18c2a4ec549c8
 ```
 
 ## Common Mistakes
 
 | Mistake | Fix |
 |---------|-----|
+| **Using human-friendly feature slugs** | Feature instance slugs MUST be computed: `{typeSlug}-{sha256(properties)[:32]}`. Never use names like `acme-corp` or `shipper-1414-sbd` |
+| **Feature expression using wrong field** | Expression FEATURE nodes use `slug` (the computed hash slug), NOT `featureUuid` |
+| **Including extendedProperties in hash** | Only `properties` are included in the slug hash, NOT `extendedProperties` |
+| **Unsorted JSON keys in hash** | Keys must be sorted alphabetically before hashing (JSON canonical form) |
 | Trying to update a feature/item type | Types are immutable — create a new version instead |
 | Missing UUID on features in clauses | Features need `uuid` field for clause references |
-| Clause features referencing wrong UUID | `featureUuid` in clause must match feature's `uuid` |
 | Feature type without `labelJsonPath` | Required for displaying feature instances |
 | Missing `featureTypeRef` on features | Must reference `orgSlug/typeSlug` |
-| Knowledge set without clauses | Need at least one clause to connect features to items |
-| Options vs extendedOptions confusion | Options = required core properties; extendedOptions = additional metadata |
+| Knowledge set without expression | Need a `featureExpression` to connect features to items |
+| Options vs extendedOptions confusion | Options = required core properties (included in slug hash); extendedOptions = additional metadata (NOT in hash) |
