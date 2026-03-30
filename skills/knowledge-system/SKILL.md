@@ -239,6 +239,129 @@ featureExpression:
       slug: vendor-fc0427f8993d7dcaa1156510165a4f21
 ```
 
+## Set-Level Attachments
+
+Knowledge sets support **set-level file attachments** — images or other files that belong to the knowledge set and can be referenced from any knowledge item's markdown content using `attachment://` URLs.
+
+### When to use set-level vs per-item attachments
+
+| Approach | Use when |
+|----------|----------|
+| **Set-level attachment** | An image or file is shared across multiple knowledge items, or referenced in `instructionMarkdown` via `attachment://` URLs |
+| **Per-item attachment** | A single file is tightly coupled to one specific knowledge item (e.g., a sample document for that item only) |
+
+Per-item attachments (a single file on a knowledge item, with an `attachmentId` field) still work as before. Set-level attachments are preferred for shared images referenced in markdown.
+
+### Attachment properties
+
+Each set-level attachment has:
+- **`attachmentId`** — A unique slug within the knowledge set (e.g., `company-logo`, `signature-sample`)
+- **`attachmentPath`** — Local file path relative to the YAML manifest (used during sync)
+- Files are stored in S3 with content-addressable hashing for deduplication
+- Attachments are cascade-deleted when the knowledge set is removed
+
+### YAML format for sync
+
+```yaml
+type: knowledge-set
+slug: vendor-extraction-rules
+attachments:
+  - attachmentId: company-logo             # Unique slug within the set
+    attachmentPath: attachments/logo.png   # Relative path to the file
+  - attachmentId: signature-sample
+    attachmentPath: attachments/signature.jpg
+knowledgeItems:
+  - slug: extraction-instructions
+    # ...
+```
+
+### Referencing attachments in markdown
+
+Use the `attachment://` URL scheme in any knowledge item's `instructionMarkdown`:
+
+```markdown
+![Company Logo](attachment://company-logo)
+
+Use the signature sample below as a reference:
+![Signature](attachment://signature-sample)
+```
+
+### API endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/knowledge-sets/{id}/attachments` | List all set-level attachments |
+| `POST` | `/api/knowledge-sets/{id}/attachments` | Upload attachment (multipart: file + attachmentId) |
+| `GET` | `/api/knowledge-sets/{id}/attachments/{attachmentId}` | Get presigned download URL |
+| `DELETE` | `/api/knowledge-sets/{id}/attachments/{attachmentId}` | Remove an attachment |
+
+### CLI
+
+```bash
+# Attach a file to a specific knowledge item (per-item attachment)
+kdx knowledge attach <ref> --file ./image.png --id my-id
+
+# Set-level attachments sync automatically via the attachments array in YAML
+kdx knowledge sync
+```
+
+### Complete example with attachments
+
+```yaml
+# === Knowledge Set with Set-Level Attachments ===
+# Feature slugs are computed: {featureTypeSlug}-{sha256(canonicalJSON(properties))[:32]}
+# echo -n '{"vendorId":"ACME"}' | shasum -a 256 | cut -c1-32 → 73182a7521dfac20a3a18c2a4ec549c8
+knowledgeSets:
+  - slug: vendor-prompts-with-images
+    name: "Vendor-Specific Prompts with Reference Images"
+    setType: extraction
+    active: true
+    priority: 7
+
+    # Set-level attachments — shared across all items in this set
+    attachments:
+      - attachmentId: acme-invoice-header
+        attachmentPath: attachments/acme-header.png
+      - attachmentId: acme-format-guide
+        attachmentPath: attachments/acme-format.png
+
+    features:
+      - slug: vendor-73182a7521dfac20a3a18c2a4ec549c8
+        featureTypeRef: "my-org/vendor"
+        properties:
+          vendorId: "ACME"
+        extendedProperties:
+          vendorName: "Acme Corporation"
+        uuid: "acme-uuid"
+
+    items:
+      - slug: acme-inv-num
+        knowledgeItemTypeRef: "my-org/extraction-prompt"
+        title: "Acme Invoice Number"
+        properties:
+          taxonPath: "invoice/invoice_number"
+          prompt: |
+            Extract Acme's invoice number in format ACME-YYYY-NNNNN.
+            Located in the top-right header area.
+          instructionMarkdown: |
+            ## Acme Invoice Number Extraction
+
+            The invoice number appears in the header area shown below:
+
+            ![Acme Header](attachment://acme-invoice-header)
+
+            Follow the format guide for edge cases:
+
+            ![Format Guide](attachment://acme-format-guide)
+        sequenceOrder: 1
+
+    featureExpression:
+      type: AND
+      children:
+        - type: FEATURE
+          slug: vendor-73182a7521dfac20a3a18c2a4ec549c8
+```
+
 ## DNF Expression Logic
 
 Knowledge sets use Disjunctive Normal Form:
@@ -455,3 +578,5 @@ knowledgeSets:
 | Missing `featureTypeRef` on features | Must reference `orgSlug/typeSlug` |
 | Knowledge set without expression | Need a `featureExpression` to connect features to items |
 | Options vs extendedOptions confusion | Options = required core properties (included in slug hash); extendedOptions = additional metadata (NOT in hash) |
+| **Using per-item attachments for shared images** | Use set-level attachments when images are referenced in markdown across multiple items; per-item attachments are for single-item files only |
+| **Wrong attachment URL scheme** | Use `attachment://attachmentId` (not `http://` or relative paths) to reference set-level attachments in markdown |
