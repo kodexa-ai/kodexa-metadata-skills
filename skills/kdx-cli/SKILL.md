@@ -371,6 +371,143 @@ kdx store reindex my-org/my-store:1.0.0
 
 ---
 
+## Task Commands
+
+The `kdx task` command provides extended operations for tasks and their plans.
+
+### task failures — List Tasks with Failed Plans
+
+Find tasks whose plans contain a FAILED step, showing the error for quick diagnosis.
+
+```bash
+kdx task failures --project <project-slug> [flags]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--project` | | Project slug (shorthand for `project.slug:'...'` filter) |
+| `--filter` | | Additional SpringFilter expression |
+| `--since` | `24h` | How far back to look (e.g., `2h`, `30m`, `1d`, `7d`) |
+| `--page-size` | `100` | Page size when fetching tasks |
+
+At least one of `--project` or `--filter` is required.
+
+```bash
+# Show failures in a project in the last 2 hours
+kdx task failures --project invoice-processing --since 2h
+
+# Show failures in the last 7 days
+kdx task failures --project invoice-processing --since 7d
+
+# Filter by template
+kdx task failures --project invoice-processing --filter "template.name:'Invoice Document Pack'"
+```
+
+Output shows a table with TITLE, TEMPLATE, PLAN CREATED, FAILED STEP, and ERROR columns.
+
+### task reprocess — Reprocess Failed Plans
+
+Reprocess one or more failed plans by restarting them from the beginning via the orchestrator.
+
+```bash
+# Single plan
+kdx task reprocess <plan-id>
+
+# Bulk — reprocess all failed plans matching filters
+kdx task reprocess --project <project-slug> --since <duration> [flags]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--project` | | Project slug for bulk mode |
+| `--filter` | | Additional SpringFilter expression |
+| `--since` | `24h` | Time window for bulk mode (e.g., `2h`, `30m`, `1d`) |
+| `--dry-run` | `false` | Preview which plans would be reprocessed |
+| `--page-size` | `100` | Page size when fetching tasks |
+
+```bash
+# Preview what would be reprocessed
+kdx task reprocess --project invoice-processing --since 2h --dry-run
+
+# Reprocess all failed plans in the last 2 hours
+kdx task reprocess --project invoice-processing --since 2h
+
+# Reprocess a single plan by ID
+kdx task reprocess 00000000-0000-4000-8000-000000000002
+```
+
+**Typical workflow:**
+
+```bash
+# 1. Find failures
+kdx task failures --project invoice-processing --since 2h
+
+# 2. Preview reprocessing (dry run)
+kdx task reprocess --project invoice-processing --since 2h --dry-run
+
+# 3. Reprocess
+kdx task reprocess --project invoice-processing --since 2h
+```
+
+---
+
+## Document-Family Commands
+
+The `kdx document-family` command provides operations for working with document families.
+
+### document-family data — Extract Data
+
+Retrieve extracted/transformed data from a document family in JSON format.
+
+```bash
+kdx document-family data <document-family-id> [flags]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--output, -o` | stdout | Output file path |
+| `--include-ids` | `true` | Include element IDs in output |
+| `--friendly-names` | `false` | Use friendly names for fields |
+| `--inline-audits` | `false` | Include inline audit information |
+| `--include-exceptions` | `false` | Include exception information |
+
+```bash
+# Print extracted data to stdout
+kdx document-family data abc123
+
+# Save to file with friendly names
+kdx document-family data abc123 --friendly-names --output extracted.json
+```
+
+### document-family content — Content Object Operations
+
+```bash
+# List content objects in a document family
+kdx document-family content list <document-family-id>
+
+# Download a specific content object
+kdx document-family content download <document-family-id> <content-object-id> --output doc.kddb
+
+# Download the latest content object
+kdx document-family content download <document-family-id> --latest --output doc.kddb
+```
+
+### document-family add-label / remove-label / set-status
+
+```bash
+# Add a label to a document family
+kdx document-family add-label <document-family-id> <tag-id>
+kdx document-family add-label <document-family-id> <tag-id> --path /some/path
+
+# Remove a label
+kdx document-family remove-label <document-family-id> <label-id>
+
+# Set document status
+kdx document-family set-status <document-family-id> <status-id>
+```
+
+---
+
 ## Sync & Deploy Workflows
 
 The `sync` command family manages metadata between local Git repos and platform environments using a `sync-config.yaml` configuration file.
@@ -457,6 +594,9 @@ kdx sync pull --target my-org-dev
 # Pull from a specific environment
 kdx sync pull --env dev
 
+# Filter resources by slug (regex)
+kdx sync pull --filter "knowledge.*liability"
+
 # Override source connection
 kdx sync pull --from-profile staging
 kdx sync pull --from-url https://staging.kodexa.example.com --from-api-key <key>
@@ -464,6 +604,25 @@ kdx sync pull --from-url https://staging.kodexa.example.com --from-api-key <key>
 # Custom config location
 kdx sync pull --config ./my-sync-config.yaml --metadata-dir ./metadata
 ```
+
+#### Discover Mode
+
+Use `--discover` to auto-generate a manifest from the platform. When an existing manifest is found, new resources are merged in without overwriting existing entries.
+
+```bash
+# Discover resources and generate manifest
+kdx sync pull --discover
+
+# Set the metadata directory in the generated manifest
+kdx sync pull --discover --discover-dir resources
+```
+
+**Smart manifest merge behavior:**
+- Newly discovered resources are appended without overwriting existing entries
+- Commented-out slugs (`# - slug`) are treated as intentional exclusions and preserved
+- Commented-out type headers (`# type-name:`) exclude the entire type from discovery
+- Warnings are shown for manifest entries not found on the server
+- Comments and formatting are preserved
 
 ### sync push — Upload Metadata
 
@@ -508,6 +667,9 @@ kdx sync deploy --branch main
 # Dry run
 kdx sync deploy --dry-run
 
+# Force push (override server conflicts)
+kdx sync deploy --force
+
 # Filter resources
 kdx sync deploy --filter "taxonomy.*"
 
@@ -529,8 +691,38 @@ kdx sync deploy --tag v1.2.0
 - Branch mappings in `sync-config.yaml` determine which targets/environments to deploy to
 - Production environments trigger safety confirmations
 - Use `--dry-run` to preview changes before deploying
+- Use `--force` to push even when the server has changed since last pull (overwrites conflicts)
 - Use `--threads` for parallel resource deployment
 - The `--output-json` flag produces a machine-readable deployment report for CI/CD pipelines
+
+### Portable YAML — `${org}` Placeholder
+
+Pulled YAML files use `${org}` as a portable placeholder for the organization slug. This enables reuse of sync repositories across different organizations.
+
+- **During pull:** The actual org slug (e.g., `acme-corp`) is replaced with `${org}` in cross-org references
+- **During push/deploy:** `${org}` is resolved back to the target organization slug
+
+No flags needed — this is automatic.
+
+### Knowledge Attachments
+
+Knowledge set and knowledge item attachments are automatically downloaded during `sync pull`. Attachments are saved to `<slug>-attachments/` directories alongside the YAML files.
+
+- Uses SHA-256 hash comparison to skip unchanged files
+- Injects `attachmentPath` and `attachmentId` directives into YAML for round-trip push
+- Uploads and downloads are parallelized for performance
+
+### Module Slug Shorthand in Manifests
+
+Modules can be listed by bare slug in manifest files instead of full path:
+
+```yaml
+modules:
+  - transformer                    # resolves to modules/transformer.yaml
+  - models/my-model/model.yml     # explicit path also works
+```
+
+The CLI resolves through multiple formats: `<slug>`, `<slug>.yaml`, `<slug>.yml`, `modules/<slug>.yaml`, `modules/<slug>.yml`.
 
 ---
 
@@ -573,6 +765,22 @@ kdx sync pull --env dev --target my-org-dev
 
 # Review changes in Git
 git diff
+```
+
+### Diagnose and Reprocess Failed Task Plans
+
+```bash
+# 1. Find failures in a project
+kdx task failures --project invoice-processing --since 2h
+
+# 2. Preview what would be reprocessed (dry run)
+kdx task reprocess --project invoice-processing --since 2h --dry-run
+
+# 3. Reprocess all failed plans
+kdx task reprocess --project invoice-processing --since 2h
+
+# 4. Or reprocess a single plan by ID
+kdx task reprocess 00000000-0000-4000-8000-000000000002
 ```
 
 ### Reprocess Failed Documents
@@ -660,6 +868,11 @@ kdx sync deploy --output-json deploy-report.json  # Then deploy
 | Reprocess does nothing | `--assistant-id` is required — without it documents get stuck in pending |
 | Reprocess no matches | Check filter syntax; use `--dry-run` to debug |
 | `kdx get` returns all resources, need just one | Use `kdx run <resource> list-<operation> --filter "slug:'my-slug'"` for filtered lookups |
+| Task failures not showing | Check `--since` window is wide enough; use `--since 7d` to search further back |
+| Task reprocess returns 404 | Verify the plan ID (not task ID) — get it from `kdx task failures` output |
+| Sync pull missing attachments | Upgrade CLI — attachment download was added recently |
+| Sync deploy conflicts | Use `--force` to override server conflicts, or pull first to reconcile |
+| `${org}` in YAML not resolving | Ensure sync push/deploy target has a valid organization configured |
 
 ## Common Mistakes
 
@@ -681,3 +894,6 @@ kdx sync deploy --output-json deploy-report.json  # Then deploy
 | Using `--force` delete in production | Skips all safety checks — prefer removing `--force` and confirming manually |
 | Reprocessing without `--assistant-id` | Always required — server won't schedule executions without it |
 | Wrong store ref format | Must be `org/slug:version`, not `org/slug` or `org:slug:version` |
+| Using task ID instead of plan ID for reprocess | `kdx task reprocess` takes a plan ID, not a task ID — use `kdx task failures` to find plan IDs |
+| Sync pull `--filter` not working | `--filter` uses regex against slug, not SpringFilter DSL — e.g., `--filter "knowledge.*"` |
+| Expecting `--discover` to overwrite manifest | Discovery merges into existing manifests — comment out entries to exclude them |
