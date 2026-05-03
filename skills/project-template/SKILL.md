@@ -1,70 +1,68 @@
 ---
 name: project-template
-description: "Use when creating or editing Kodexa project templates — YAML blueprints that define complete project configurations including stores, assistants, taxonomies, data forms, workspaces, knowledge sets, task templates, status workflows, and scheduled jobs"
+description: "Use when creating or editing Kodexa project templates — YAML blueprints that define complete project configurations including stores, assistants, taxonomies, data forms, workspaces, knowledge sets, task templates, status workflows, scheduled jobs, triggers, and activity-plan bindings"
 ---
 
 # Kodexa Project Template Authoring
 
 ## Overview
 
-Project templates are complete blueprints for Kodexa projects. They define every component — stores, assistants, taxonomies, data forms, workspaces, knowledge sets, task templates, scheduled jobs, and status workflows — in a single YAML file. When a user creates a project from a template, all components are provisioned automatically.
+Project templates are blueprints for Kodexa projects. They define stores, assistants, taxonomies, data forms, status workflows, knowledge sets, scheduled jobs, and the project's option schema. When a user creates a project from a template, all components are provisioned and bound together.
+
+Since the **activity refactor (2026-05-02)** the platform also exposes three first-class resources that compose with project templates:
+
+- **`task-template`** — org-scoped human-task definition (was project-scoped). Templates can be defined inline in a project-template *or* defined once at the org level and bound to a project.
+- **`task-status`** — org-scoped status definition. The project-template's inline `taskStatuses:` array continues to work as a project-level workflow, but org-level `task-status` resources can be bound for reuse across projects.
+- **`activity-plan`** + **`trigger`** — replace the old inline `planTemplate:` inside task templates. `Trigger` is a project-scoped resource (separate YAML) that listens for events and starts a referenced ActivityPlan.
+
+See the `task-template`, `task-status` (this skill), `activity-plan`, and `trigger` (this skill) sections for details.
 
 ## When to Use
 
 - Creating a new project template from scratch
-- Adding components to an existing template
-- Setting up status workflows (document, task, attribute)
-- Configuring workspace layouts and panels
-- Defining project options (user-configurable settings)
-- Wiring up assistant connections and event subscriptions
-
-## Interactive Wizard
-
-1. **Use case** — What does this project do? (document processing, data extraction, classification, review workflow, custom)
-2. **Document types** — What documents are processed? What volume?
-3. **Stores** — What stores are needed? (intake, processed, exceptions, training, archive)
-4. **Processing pipeline** — Which modules/assistants process documents? In what order?
-5. **Data capture** — What data forms are needed for manual entry/review?
-6. **Workspace** — What panels should the workspace show?
-7. **Automation** — Any scheduled jobs? Knowledge-based routing?
-
-Generate the complete project template YAML with all cross-references wired correctly.
+- Adding stores, assistants, or data forms to an existing template
+- Setting up document/task/attribute status workflows
+- Defining project options (user-configurable settings) and task options
+- Wiring assistant connections and event subscriptions
+- Configuring a scheduled job
+- Wiring a trigger to launch an ActivityPlan
 
 ## Top-Level Structure
 
 ```yaml
-slug: my-template                     # Required: unique identifier
-orgSlug: my-org                       # Required: organization slug
+slug: my-template                     # Required — unique identifier
+orgSlug: my-org                       # Required
+type: projectTemplate                 # Required — must be "projectTemplate"
+name: "My Project Template"           # Required — display name
 version: "1.0.0"                      # Semantic version
-name: "My Project Template"           # Required: display name
-type: projectTemplate                 # Required: must be "projectTemplate"
-description: "Template purpose"       # Description
-
-# Optional metadata
-publicAccess: false                   # Public availability
-deleteProtection: true                # Prevent accidental deletion
-icon: "file-invoice"                  # Icon identifier
-helpUrl: "https://docs.example.com"   # Help documentation URL
-overviewMarkdown: |                   # Markdown overview
-  Description shown in template selector.
+description: "Template purpose"
+publicAccess: false
+deleteProtection: true
+icon: "file-invoice"
+imageUrl: "https://..."
+helpUrl: "https://docs.example.com"
+overviewMarkdown: |
+  Markdown shown in the template selector.
+provider: "Acme"
+providerUrl: "https://acme.com"
+providerImageUrl: "https://acme.com/logo.png"
+deprecated: false
+extensionPackRef: ""                  # Set when distributed via an extension pack
 
 # Component collections
-stores: []                            # Document and data stores
-assistants: []                        # Processing assistants
-taxonomies: []                        # Data definitions / taxonomies
-dataForms: []                         # UI data forms
-workspaces: []                        # Workspace configurations
-taskTemplates: []                     # Reusable task definitions
-scheduledJobs: []                     # Cron-based automation
-knowledgeSets: []                     # Knowledge-based routing
-
-# Status workflows
-documentStatuses: []                  # Document lifecycle states
-taskStatuses: []                      # Task workflow states
-attributeStatuses: []                 # Data attribute states
-
-# Configuration
-options: {}                           # User-configurable settings
+stores: []
+assistants: []
+taxonomies: []
+dataForms: []
+documentStatuses: []
+taskStatuses: []
+attributeStatuses: []
+taskTemplates: []
+scheduledJobs: []
+knowledgeSets: []
+tags: []
+options: {}                           # ProjectOptions (see below)
+memory: {}                            # ProjectMemory (filters/queries/dashboards)
 ```
 
 ## Template Variables
@@ -76,7 +74,7 @@ options: {}                           # User-configurable settings
 | `${project.slug}` | Project slug | `invoice-processing` |
 | `${orgSlug}` | Organization slug | `acme-corp` |
 
-Use these in slugs and references to ensure uniqueness across projects.
+Use these in store slugs and `sourceRef`/`stores` references to keep them unique per project.
 
 ## Component Schemas
 
@@ -84,23 +82,24 @@ Use these in slugs and references to ensure uniqueness across projects.
 
 ```yaml
 stores:
-  - slug: "${project.id}-documents"   # Unique slug (use template vars)
-    name: "Documents"                  # Display name
-    storeType: DOCUMENT                # DOCUMENT or DATA
-    storePurpose: OPERATIONAL          # OPERATIONAL, TRAINING
-    description: "Purpose"             # Optional description
-    deleteProtection: true             # Prevent deletion
-    highQualityPreview: true           # High-quality doc previews
-    showThumbnails: true               # Show thumbnails in list
-    showStoreInLabeling: true          # Show in labeling UI
-    allowDataEditing: false            # Allow in-place editing
-    documentProperties:                # Metadata columns
+  - slug: "${project.id}-documents"
+    name: "Documents"
+    storeType: DOCUMENT                 # DOCUMENT, DATA
+    storePurpose: OPERATIONAL           # OPERATIONAL, TRAINING
+    description: "Purpose"
+    deleteProtection: true
+    highQualityPreview: true
+    showThumbnails: true
+    showStoreInLabeling: true
+    allowDataEditing: false
+    documentProperties:                 # Metadata columns (free-form)
       - name: vendor_name
         type: string
         label: "Vendor Name"
-    labelExpressions:                  # Auto-labels
+    labelExpressions:
       - label: "processed"
         expression: "status == 'completed'"
+    files: []                           # Optional bootstrap files
 ```
 
 ### Assistants
@@ -110,21 +109,23 @@ assistants:
   - name: "Document Processor"
     slug: doc-processor
     description: "Processes incoming documents"
-    assistantDefinitionRef: kodexa/pdf-extractor  # Module reference
-    priorityHint: 10                   # Execution priority (higher = more priority)
-    loggingEnabled: true               # Detailed execution logging
-    chatEnabled: false                 # Enable chat interface
-    connections:                       # Event subscriptions
-      - sourceType: STORE              # STORE, CHANNEL, DOCUMENT_FAMILY
+    assistantDefinitionRef: kodexa/pdf-extractor
+    priorityHint: 10
+    loggingEnabled: true
+    chatEnabled: false
+    showInTraining: false
+    assistantRole: ""                   # Optional role tag
+    connections:
+      - sourceType: STORE               # STORE, CHANNEL, DOCUMENT_FAMILY, etc.
         sourceRef: "${orgSlug}/${project.id}-intake"
-        subscription: "!hasMixins('processed')"  # Filter expression
-    stores:                            # Store access list
+        subscription: "!hasMixins('processed')"
+    stores:
       - "${orgSlug}/${project.id}-intake"
       - "${orgSlug}/${project.id}-output"
-    options:                           # Module-specific options
+    options:
       confidence_threshold: 0.85
-    schedules:                         # Optional cron schedules
-      - cronExpression: "0 0 8 * * *"
+    schedules:
+      - { type: cron, cronExpression: "0 0 8 * * *" }
 ```
 
 ### Taxonomies
@@ -133,78 +134,55 @@ assistants:
 taxonomies:
   - slug: categories
     name: "Document Categories"
-    taxonomyType: CONTENT              # CONTENT, TASK, DOCUMENT
-    taxons:
-      - name: Category A
-        children:
-          - name: Sub-Category 1
-          - name: Sub-Category 2
-      - name: Category B
-
-  # Or reference an existing taxonomy
-  - ref: "kodexa/standard-taxonomy"
+    taxonomyType: CONTENT               # CONTENT, TASK, DOCUMENT
+    taxons: { ... }                     # See data-definition skill
+  - templateRef: "kodexa/standard-taxonomy"   # Or reference an existing taxonomy
 ```
 
 ### Data Forms
 
 ```yaml
 dataForms:
-  - slug: metadata-form
-    name: "Metadata Entry Form"
-    description: "Manual data entry form"
-    cards:                             # V1 card-based definition
-      - type: form
-        fields:
-          - name: field_name
-            type: text                 # text, date, number, select, textarea
-            label: "Field Label"
-            required: true
+  - slug: invoice-review
+    name: "Invoice Review Form"
+    description: "Review extracted fields"
+    entrypoints:
+      - documentFamily
+      - task
+    cards: { ... }                      # V2 component tree (see data-form skill)
+  - templateRef: "${orgSlug}/shared-form"
 ```
 
-### Workspaces
-
-```yaml
-workspaces:
-  - name: "Main Workspace"
-    slug: main-workspace
-    description: "Primary processing workspace"
-    workspaceStorage:
-      availablePanels:
-        documentStores: true           # Document stores panel
-        dataForms: true                # Data forms panel
-        taxonomies: true               # Taxonomy panel
-        assistants: true               # Assistants panel
-        exceptions: true               # Exceptions panel
-        properties: true               # Properties panel
-        channels: true                 # Chat/channels panel
-        auditEvents: true              # Audit trail panel
-        navigation: true               # Navigation panel
-      overview: |                      # Markdown overview
-        # Workspace Guide
-        Instructions for users...
-```
-
-### Status Configurations
+### Document Statuses
 
 ```yaml
 documentStatuses:
   - status: "New"
     slug: new
-    color: "#6B7280"                   # Gray
-    statusType: UNRESOLVED
+    color: "#6B7280"
+    icon: "inbox"
+    statusType: UNRESOLVED              # UNRESOLVED, RESOLVED
   - status: "Processing"
     slug: processing
-    color: "#3B82F6"                   # Blue
+    color: "#3B82F6"
   - status: "Complete"
     slug: complete
-    color: "#10B981"                   # Green
+    color: "#10B981"
     statusType: RESOLVED
+```
 
+### Task Statuses (inline, project-level)
+
+The inline `taskStatuses:` array remains supported for project-template-driven projects.
+
+```yaml
 taskStatuses:
   - label: "To Do"
     slug: todo
     color: "#6B7280"
-    statusType: TODO
+    icon: "circle"
+    statusType: OPEN                    # OPEN, IN_PROGRESS, DONE, BLOCKED
+    locked: false
   - label: "In Progress"
     slug: in-progress
     color: "#3B82F6"
@@ -213,19 +191,47 @@ taskStatuses:
     slug: done
     color: "#10B981"
     statusType: DONE
+```
 
+> **Activity refactor note.** As of 2026-05-02 there is also an org-scoped `task-status` resource (one YAML per status, synced to `kdxa_task_statuses`, resolvable via `task-status://orgSlug/slug`). Projects bind to org-level statuses via the `kdxa_project_resources` table — there is no inline `refs:` block in project-template YAML; binding happens at sync/deploy time. The inline form above remains valid for templated project provisioning.
+
+### Task Statuses (org-scoped resource)
+
+Authored as a separate YAML file at the org level:
+
+```yaml
+# task-statuses/in-review.yaml
+slug: in-review
+name: "In Review"
+organizationId: ${orgSlug}
+label: "In Review"
+color: "#F59E0B"
+icon: "hourglass"
+statusType: IN_PROGRESS                 # OPEN, IN_PROGRESS, DONE, BLOCKED
+sequence: 2                             # Ordering hint within statusType group
+locked: false                           # If true, transitions away are blocked
+metadata:
+  description: "Awaiting reviewer action"
+```
+
+Push order is **65** (with task-templates and activity-plans), so org statuses exist before assistants/triggers reference them.
+
+### Attribute Statuses
+
+```yaml
 attributeStatuses:
   - status: "Pending"
-    slug: pending
     color: "#F59E0B"
+    icon: "hourglass"
     statusType: UNRESOLVED
   - status: "Validated"
-    slug: validated
     color: "#10B981"
     statusType: RESOLVED
 ```
 
-### Task Templates
+### Task Templates (inline, project-level)
+
+The inline `taskTemplates:` block remains valid for project-template-driven projects; it produces the same downstream task-template rows that org-level templates would.
 
 ```yaml
 taskTemplates:
@@ -233,19 +239,47 @@ taskTemplates:
     slug: review-task
     description: "Manual review task"
     metadata:
-      fields:
-        - name: approval_status
-          type: select
-          label: "Approval"
-          options:
-            - value: approved
-              label: "Approved"
-            - value: rejected
-              label: "Rejected"
-      assignmentRules:
-        autoAssign: true
-        assignToRole: reviewer
+      priority: 2
+      teamSlug: review-team
+      options: []                       # See task-template skill
+      forms: []
+      actions: []
+      documentFamilyGroups: []
 ```
+
+> **Do not author inline `planned: true` / `planTemplate.steps: ...` blocks.** Those fields are Phase 2 transition stubs (no longer mapped to the database). Move orchestration into a separate `activity-plan` resource and use a `trigger` to launch it.
+
+For org-level reuse, define one `task-template` YAML per template at the org level (see the **task-template** skill) and bind via project resources.
+
+### Triggers (project-scoped automation)
+
+A **`Trigger`** is a project-scoped resource that listens for an event and starts a referenced ActivityPlan. Triggers are **separate YAML files** (one per trigger), not embedded in project-template.
+
+```yaml
+# triggers/auto-review-on-task-created.yaml
+slug: auto-review-on-task-created
+name: "Auto-trigger review activity"
+projectId: ${project.id}
+enabled: true
+eventKind: task_created                 # task_created | task_status_changed | activity_completed | manual
+eventFilter:
+  taskTemplateRef: invoice-review       # JSONata predicate, event-kind specific
+activityPlanRef: "activity-plan://${orgSlug}/invoice-review-flow"
+triggerMetadata: {}                     # Event-kind-specific config (e.g. cron in v2)
+metadata:
+  description: "Run review activity whenever an invoice-review task is created"
+```
+
+**Event kinds (v1):**
+
+| `eventKind` | `eventFilter` shape | Fires when |
+|---|---|---|
+| `task_created` | `{ taskTemplateRef? }` | A task is created (optionally filtered to a template slug) |
+| `task_status_changed` | `{ taskTemplateRef?, fromStatusSlug?, toStatusSlug? }` | A task transitions status |
+| `activity_completed` | `{ parentActivityPlanRef? }` | A parent activity completes |
+| `manual` | `{}` | Only via explicit API call to start the trigger |
+
+> Future (v2): `schedule`, `document_arrived`, `data_extracted`. Not yet implemented.
 
 ### Knowledge Sets
 
@@ -256,6 +290,7 @@ knowledgeSets:
     description: "Route documents based on features"
     setType: extraction
     active: true
+    showOnNewProject: false
     features:
       - slug: is-high-value
         featureTypeRef: "kodexa/numeric-feature"
@@ -265,9 +300,12 @@ knowledgeSets:
           threshold: 10000
     clauses:
       - features:
-          - featureUuid: "uuid-1"
-            positive: true
+          - { featureUuid: "uuid-1", positive: true }
+    knowledgeItems: []                  # Items pre-attached to the project
+    featureExpression: { ... }          # Optional KnowledgeExpression
 ```
+
+See the **knowledge-system** skill for full schemas.
 
 ### Scheduled Jobs
 
@@ -275,230 +313,109 @@ knowledgeSets:
 scheduledJobs:
   - name: "Daily Report"
     description: "Generate processing report"
-    modelRef: kodexa/report-generator  # Module reference
+    modelRef: kodexa/report-generator
     active: true
-    schedules:
-      - cronExpression: "0 0 8 * * *"  # 8 AM daily
+    deleted: false
     properties:
       report_format: pdf
+    schedules:
+      - { type: cron, cronExpression: "0 0 8 * * *" }
+```
+
+### Tags
+
+```yaml
+tags:
+  - { label: "Production", color: "#10B981" }
+  - { label: "PII",        color: "#EF4444" }
+```
+
+### Memory
+
+`memory` seeds the project's user-state defaults — recent filter sets, query history, dashboard ordering. Usually empty in a freshly-authored template.
+
+```yaml
+memory:
+  recentFilters: {}
+  recentQueries: {}
+  orderedDashboards: []
 ```
 
 ## Project Options
 
+`options` is a `ProjectOptions` blob: user-facing options shown in the project's settings UI plus runtime configuration.
+
 ```yaml
 options:
-  options:                             # User-facing settings
+  options:                              # Project-level options exposed in UI
     - name: use_ocr
-      type: boolean                    # boolean, string, number, select
+      type: boolean
       label: "Enable OCR"
       description: "Use OCR for scanned documents"
       default: true
       hint: "Disable for digital PDFs"
-
     - name: confidence
       type: number
       label: "Confidence Threshold"
       default: 0.85
-      min: 0
-      max: 1
-
     - name: mode
       type: select
       label: "Processing Mode"
       default: "auto"
       possibleValues:
-        - value: auto
-          label: "Automatic"
-        - value: manual
-          label: "Manual Review"
-
+        - { value: auto,   label: "Automatic" }
+        - { value: manual, label: "Manual Review" }
     - name: advanced_option
       type: string
       label: "Advanced Setting"
-      showIf: "mode == 'manual'"       # Conditional visibility
-      developerOnly: true              # Only for developers
+      showIf: "mode == 'manual'"
+      developerOnly: true
 
-  taskOptions:
-    showTakeNext: true                 # Show "Take Next" button
-    showNewTask: true                  # Show "New Task" button
-```
+  dataOptions: []                       # Data-extraction-related options
+  properties: {}                        # Free-form properties
+  dataProperties: {}                    # Free-form data properties
+  groupTaxonTypeFeatures: {}            # Per-taxon-type-feature group config
+  taxonTypeFeatures: {}                 # Per-taxon-type-feature config
 
-## Complete Example
-
-```yaml
-slug: invoice-processing
-orgSlug: acme-corp
-version: "1.0.0"
-name: Invoice Processing System
-type: projectTemplate
-description: Complete invoice processing with extraction, validation, and approval
-deleteProtection: true
-
-stores:
-  - slug: "${project.id}-intake"
-    name: "Invoice Intake"
-    storeType: DOCUMENT
-    storePurpose: OPERATIONAL
-    deleteProtection: true
-    highQualityPreview: true
-    showThumbnails: true
-
-  - slug: "${project.id}-processed"
-    name: "Processed Invoices"
-    storeType: DOCUMENT
-    storePurpose: OPERATIONAL
-
-  - slug: "${project.id}-exceptions"
-    name: "Exception Queue"
-    storeType: DOCUMENT
-    storePurpose: OPERATIONAL
-
-documentStatuses:
-  - status: "New"
-    slug: new
-    color: "#6B7280"
-    statusType: UNRESOLVED
-  - status: "Processing"
-    slug: processing
-    color: "#3B82F6"
-  - status: "Extracted"
-    slug: extracted
-    color: "#8B5CF6"
-  - status: "Validated"
-    slug: validated
-    color: "#10B981"
-  - status: "Approved"
-    slug: approved
-    color: "#059669"
-    statusType: RESOLVED
-  - status: "Exception"
-    slug: exception
-    color: "#EF4444"
-
-taskStatuses:
-  - label: "To Review"
-    slug: to-review
-    color: "#6B7280"
-    statusType: TODO
-  - label: "In Review"
-    slug: in-review
-    color: "#3B82F6"
-    statusType: IN_PROGRESS
-  - label: "Completed"
-    slug: completed
-    color: "#10B981"
-    statusType: DONE
-
-assistants:
-  - name: Invoice Extractor
-    slug: invoice-extractor
-    assistantDefinitionRef: kodexa/pdf-invoice-extractor
-    priorityHint: 10
-    loggingEnabled: true
-    connections:
-      - sourceType: STORE
-        sourceRef: "${orgSlug}/${project.id}-intake"
-        subscription: "!hasMixins('processed')"
-    stores:
-      - "${orgSlug}/${project.id}-intake"
-      - "${orgSlug}/${project.id}-processed"
-      - "${orgSlug}/${project.id}-exceptions"
-    options:
-      use_ocr: true
-      confidence_threshold: 0.85
-
-taxonomies:
-  - slug: invoice-categories
-    name: Invoice Categories
-    taxonomyType: CONTENT
-    taxons:
-      - name: Professional Services
-        children:
-          - name: Consulting
-          - name: Legal
-      - name: Goods
-        children:
-          - name: Office Supplies
-          - name: Equipment
-
-dataForms:
-  - slug: invoice-review
-    name: Invoice Review Form
-    cards:
-      - type: form
-        fields:
-          - name: invoice_number
-            type: text
-            label: "Invoice Number"
-            required: true
-          - name: total_amount
-            type: number
-            label: "Total Amount"
-            required: true
-
-workspaces:
-  - name: Invoice Processing
-    slug: invoice-workspace
-    workspaceStorage:
-      availablePanels:
-        documentStores: true
-        dataForms: true
-        taxonomies: true
-        assistants: true
-        exceptions: true
-        auditEvents: true
-      overview: |
-        # Invoice Processing
-        1. Upload invoices to **Invoice Intake**
-        2. Automatic extraction runs via **Invoice Extractor**
-        3. Review results in **Processed Invoices**
-        4. Handle exceptions in **Exception Queue**
-
-taskTemplates:
-  - name: Invoice Approval
-    slug: invoice-approval
-    metadata:
-      fields:
-        - name: approval_status
-          type: select
-          label: "Approval"
-          options:
-            - value: approved
-              label: "Approved"
-            - value: rejected
-              label: "Rejected"
-
-scheduledJobs:
-  - name: Daily Report
-    modelRef: kodexa/report-generator
-    active: true
-    schedules:
-      - cronExpression: "0 0 8 * * *"
-    properties:
-      report_format: pdf
-
-options:
-  options:
-    - name: auto_validation
-      type: boolean
-      label: "Auto Validation"
-      default: true
-    - name: confidence_threshold
-      type: number
-      label: "Confidence Threshold"
-      default: 0.85
   taskOptions:
     showTakeNext: true
     showNewTask: true
+
+  executionPolicy: {}                   # session.ExecutionPolicy
+
+  companion:                            # Project-level workspace companion baseline
+    agentRuntimeRef: "${orgSlug}/companion"
+    moduleRefs: []
+    prompt: "Help users complete project tasks."
 ```
+
+Each entry in `options:` and `dataOptions:` follows the same `Option` shape as in task-templates (see **task-template** skill).
+
+## Quick Reference — What Lives Where
+
+| Concern | Where to author |
+|---|---|
+| Stores, assistants, taxonomies, data forms | Inline in project-template |
+| Document/attribute status workflows | Inline `documentStatuses` / `attributeStatuses` |
+| Task statuses | Inline `taskStatuses` (project) **or** org-level `task-status` resources, bound via project resources |
+| Task shape (fields/forms/actions) | Inline `taskTemplates` **or** org-level `task-template` resources |
+| Multi-step orchestration (extract → review → approve) | Org-level **`activity-plan`** resource — *not* inline `planTemplate` |
+| Event-driven activity launches | Project-scoped **`trigger`** resources |
+| Cron-driven module runs | `scheduledJobs:` inline |
+| Project-level UI options | `options.options[]` |
+| Project workspace companion | `options.companion` |
 
 ## Common Mistakes
 
 | Mistake | Fix |
-|---------|-----|
-| Hardcoded store slugs | Use `${project.id}` prefix for uniqueness |
-| Missing store refs in assistant connections | Store refs must be `${orgSlug}/${project.id}-slug` format |
-| No UNRESOLVED/RESOLVED status types | First status should be UNRESOLVED, final should be RESOLVED |
-| Workspace missing key panels | Include at minimum: documentStores, dataForms, exceptions |
-| Assistant without connections | At least one connection is needed to trigger processing |
+|---|---|
+| Authoring `planned: true` / `planTemplate:` under inline `taskTemplates` | Drop those fields. Define an `activity-plan` and a `trigger` instead. |
+| Hardcoded store slugs | Use `${project.id}` prefix for uniqueness across projects |
+| Missing store refs in assistant connections | Refs must be `${orgSlug}/${project.id}-slug` |
+| No UNRESOLVED/RESOLVED status types | First doc status should be UNRESOLVED, terminal should be RESOLVED |
+| Mixing OPEN/CLOSED with task statusType | Task statusType is **OPEN, IN_PROGRESS, DONE, BLOCKED** (not RESOLVED/UNRESOLVED) |
+| Workspace missing key panels | Include `documentStores`, `dataForms`, `exceptions` at minimum |
+| Assistant without connections | Need at least one connection to trigger processing |
+| Embedding triggers in project-template | Triggers are separate project-scoped YAML resources |
 | Missing `type: projectTemplate` | Required for the platform to recognize this as a template |
+| Using inline `taskStatuses` and trying to reference them across projects | Use org-level `task-status` resources for cross-project reuse |

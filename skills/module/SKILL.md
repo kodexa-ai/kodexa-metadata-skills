@@ -53,12 +53,12 @@ metadata:
 
   # === Runtime (model type only) ===
   moduleRuntimeRef: kodexa/base-cloud-model-runtime  # Runtime reference
-  modelRuntimeParameters:             # Runtime-specific params
+  moduleRuntimeParameters:            # Runtime-specific params (renamed from moduleRuntimeParameters)
     module: my_module                 # Python module name
     function: infer                   # Entry point function (default: infer)
 
   # === Sidecars ===
-  modelSidecars:                      # Additional modules loaded before execution
+  moduleSidecars:                     # Additional modules loaded before execution (renamed from moduleSidecars)
     - kodexa/kodexa-llm-model:1.0.0
 
   # === Capabilities ===
@@ -66,6 +66,7 @@ metadata:
   inferable: true                     # Can run inference
   trainable: false                    # Supports training
   supportsScheduling: false           # Can be scheduled via cron
+  state: TRAINED                      # Module state (TRAINED for shipped models)
 
   # === Inference Options (user-configurable) ===
   inferenceOptions:
@@ -103,16 +104,65 @@ overviewMarkdown: |                   # Detailed description (markdown)
 ```yaml
 inferenceOptions:
   - name: option_name                 # Required: parameter name
-    type: string                      # string, number, boolean, select
+    type: string                      # See "Option Types" below
     default: "value"                  # Default value
     description: "What this controls" # User-facing description
     label: "Display Label"            # Optional display label
     required: false                   # Whether required
-    possibleValues:                   # For select type
-      - value: "opt1"
-        label: "Option 1"
-      - value: "opt2"
-        label: "Option 2"
+    showIf: "this.use_advanced"       # Conditional visibility (expression)
+    tabName: "Advanced"               # Group under a UI tab
+    developerOnly: true               # Hide unless developer mode enabled
+    possibleValues:                   # For select-style types
+      - { value: opt1, label: "Option 1" }
+      - { value: opt2, label: "Option 2" }
+```
+
+### Option Types
+
+| `type` | UI / behavior |
+|---|---|
+| `string` | Text input (combine with `possibleValues` for a select) |
+| `number` | Numeric input |
+| `boolean` | Toggle |
+| `text` / `textarea` | Multi-line text |
+| `markdown` | Markdown editor |
+| `label` | Document label picker |
+| `taxonomy` | Taxonomy picker |
+| `documentStore` | Document-store picker |
+| `documentStatus` | Document-status picker |
+| `taskStatus` | Task-status picker |
+| `taskTemplates` | Task-template picker |
+| `list` | Repeating list editor — pair with `listType` |
+
+### Lists and Nested Options
+
+Use `type: list` to render a repeating editor. Choose `listType` to control what each row contains:
+
+```yaml
+inferenceOptions:
+  # List of objects — each row is a sub-form defined by groupOptions
+  - name: actions
+    type: list
+    listType: object                  # object | <primitive option type>
+    label: "Label Actions"
+    groupOptions:
+      - name: type
+        type: string
+        label: Type
+        required: true
+        possibleValues:
+          - { value: add_label,    label: "Add Label" }
+          - { value: remove_label, label: "Remove Label" }
+      - name: label
+        type: label
+        label: "Label"
+        required: true
+
+  # List of preset values (e.g. allowed document statuses)
+  - name: allowed_statuses
+    type: list
+    listType: documentStatus          # picker per row
+    label: "Allowed Statuses"
 ```
 
 ## Python Entry Points
@@ -207,7 +257,7 @@ Sidecars are additional modules loaded into `sys.path` before your module execut
 
 ```yaml
 metadata:
-  modelSidecars:
+  moduleSidecars:
     - kodexa/kodexa-llm-model:1.0.0   # LLM utilities
     - kodexa/kodexa-langchain-module   # LangChain integration
 ```
@@ -272,11 +322,11 @@ metadata:
     - "**/tests/**"
 
   moduleRuntimeRef: kodexa/base-cloud-model-runtime
-  modelRuntimeParameters:
+  moduleRuntimeParameters:
     module: invoice_extractor
     function: infer
 
-  modelSidecars:
+  moduleSidecars:
     - kodexa/kodexa-llm-model:1.0.0
 
   eventAware: true
@@ -328,9 +378,12 @@ overviewMarkdown: |
 
 | Mistake | Fix |
 |---------|-----|
+| Using legacy `modelRuntimeParameters:` / `modelSidecars:` | Renamed to `moduleRuntimeParameters:` / `moduleSidecars:`. Update both keys. |
 | Missing `moduleRuntimeRef` for model type | Models must reference a runtime |
-| Wrong `modelRuntimeParameters.module` | Must match the Python package directory name |
+| Wrong `moduleRuntimeParameters.module` | Must match the Python package directory name |
 | Sidecar without version | Include version: `kodexa/sidecar:1.0.0` |
 | `eventAware: true` without `handle_event` function | Add `handle_event()` to your Python code |
 | `contents` patterns missing files | Use `**` for recursive glob: `my_module/**.py` |
 | Inference options not matching function params | Option `name` must match the Python function parameter name |
+| List option without `listType` | Set `listType: object` (with `groupOptions`) or `listType: <primitive>` |
+| Conditional option without `showIf` | Use `showIf: "this.<other_option_name>"` (boolean) or any expression |

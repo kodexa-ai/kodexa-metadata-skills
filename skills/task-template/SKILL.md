@@ -1,328 +1,321 @@
 ---
 name: task-template
-description: "Use when creating or editing Kodexa task templates — YAML definitions for reusable task configurations including fields, assignment rules, document groups, actions, planned activities, and custom options"
+description: "Use when creating or editing Kodexa task templates — org-scoped YAML defining reusable task configurations (options, forms, actions, document family groups) that projects bind to via project resources"
 ---
 
 # Kodexa Task Template Authoring
 
 ## Overview
 
-Task templates define reusable task configurations in Kodexa projects. They specify the fields, assignment rules, actions, document groups, and optional automated planning for tasks that are created during document processing workflows.
+Task templates define reusable task configurations. Since the **activity refactor (2026-05-02)** they are **organization-scoped** metadata resources — one YAML file per template, synced at the org level. Projects bind to specific templates via the `kdxa_project_resources` table; the same template can be reused across many projects.
+
+**Automation that used to live inside a task template (the old `planned: true` + `planTemplate.steps:` fields) has moved into a separate resource: `activity-plan`.** Task templates are now purely about the human-task shape — fields, forms, actions, document groups, assignment, behavior. See the `activity-plan` skill for orchestration.
 
 ## When to Use
 
-- Creating a new task template for review/approval workflows
-- Adding custom fields to tasks
-- Configuring assignment rules (auto-assign, role-based)
-- Setting up document groups for task-based document management
-- Adding action buttons with status transitions
-- Configuring automated plan generation
+- Defining a reusable human task (review, approval, exception resolution)
+- Adding custom fields/options to a task type
+- Attaching one or more data forms to a task
+- Configuring document family groups
+- Setting team ownership, AI naming, chat prompt, execution policy
+- Defining action buttons users can click in the task UI
 
-## Interactive Wizard
+## What Has Changed
 
-1. **Task purpose** — What is this task for? (document review, approval, data correction, classification)
-2. **Fields** — What information should the task capture? (notes, approval status, priority)
-3. **Assignment** — How are tasks assigned? (auto-assign by role, manual, round-robin)
-4. **Documents** — How should documents be organized? (groups, filters, upload rules)
-5. **Actions** — What actions can users take? (approve, reject, escalate)
-6. **Planning** — Should tasks auto-generate plans?
+| Old (pre-refactor) | New |
+|---|---|
+| Project-scoped (one per project) | **Org-scoped** (`task-template://orgSlug/slug`) |
+| `planned: true` + `planTemplate.steps:` for auto-orchestration | **Removed.** Use a separate `activity-plan` resource and a `trigger` to launch it |
+| `assignmentRules: { autoAssign, assignToRole, assignToTeam }` | **Not part of the schema.** Use `metadata.teamSlug`; assignment behavior is platform-level |
+| `documentGroups:` | Renamed to **`documentFamilyGroups:`** |
+| Top-level `fields:` (sometimes confused with `options:`) | Single **`metadata.options:`** array (the field/option distinction is gone) |
+| Action `targetStatus` / `icon` / `color` / `setAttributes` | **Folded into `properties` map** on each action |
+| — | **New top-level `initialStatusSlug:`** — initial task status, resolved against the project's bound `task-status` resources |
 
-## Task Template Structure
+## Top-Level Structure
 
 ```yaml
-taskTemplates:
-  - name: "Review Task"                # Required: display name
-    slug: review-task                   # Required: unique identifier
-    description: "Task purpose"         # Optional description
-    metadata:                           # Task configuration
-      fields: []                        # Custom fields
-      assignmentRules: {}               # Assignment configuration
-      documentGroups: []                # Document organization
-      actions: []                       # Action buttons
-      options: []                       # Custom options
-      planned: false                    # Enable auto-planning
-      planTemplate: {}                  # Plan template structure
+slug: invoice-review                         # Required — unique within (orgSlug, slug)
+name: "Invoice Review"                       # Required — display name (DB column: title)
+organizationId: my-org-uuid                  # Required — the owning org
+description: "Manual review of extracted invoices"
+initialStatusSlug: todo                      # Optional — must match a task-status slug bound to the project at runtime
+deprecated: false                            # Optional — mark legacy plan-vehicle templates
+metadata:
+  options: []                                # Field definitions (see below)
+  forms: []                                  # Attached data forms
+  actions: []                                # Action buttons
+  documentFamilyGroups: []                   # Document grouping config
+  workspaceId: ""                            # Optional — workspace binding (UUID)
+  properties: {}                             # Custom map (free-form)
+  priority: 2                                # Default priority (int)
+  teamSlug: finance                          # Default team
+  aiNaming: { enabled: true, prompt: "..." } # Optional — AI-generated title/description
+  chatPrompt: { enabled: false, prompt: "" } # Optional — auto chat prompt on task open
+  executionPolicy: {}                        # Optional — session.ExecutionPolicy
+  companion: {}                              # Optional — workspace companion agent config
 ```
 
-## Custom Fields
+> The `planned` and `planTemplate` fields still exist on the Go struct as **Phase 2 transition stubs** (not mapped to the database). **Do not author them in new YAML.** Phase 4 removes them outright.
+
+## Options (Custom Fields)
+
+The `options` array is the unified field/option list. There is no longer a separate `fields:` section.
 
 ```yaml
-fields:
-  - name: approval_status
-    type: select                       # text, textarea, number, date, select, boolean
-    label: "Approval Status"
-    required: true
-    options:
-      - value: approved
-        label: "Approved"
-      - value: rejected
-        label: "Rejected"
-      - value: escalated
-        label: "Escalated to Manager"
+metadata:
+  options:
+    - name: approval_status
+      type: select                  # text, textarea, number, date, select, boolean
+      label: "Approval Status"
+      required: true
+      possibleValues:
+        - value: approved
+          label: "Approved"
+        - value: rejected
+          label: "Rejected"
+        - value: escalated
+          label: "Escalate to Manager"
 
-  - name: review_notes
-    type: textarea
-    label: "Review Notes"
-    required: false
+    - name: review_notes
+      type: textarea
+      label: "Review Notes"
+      required: false
+      hint: "Capture rationale for the decision"
 
-  - name: priority_score
-    type: number
-    label: "Priority Score"
-    required: false
+    - name: priority_score
+      type: number
+      label: "Priority Score"
+      default: 0
 
-  - name: due_date
-    type: date
-    label: "Due Date"
-    required: true
+    - name: due_date
+      type: date
+      label: "Due Date"
+      required: true
 
-  - name: is_urgent
-    type: boolean
-    label: "Urgent"
-    required: false
+    - name: is_urgent
+      type: boolean
+      label: "Urgent"
+      falseLabel: "Normal"          # Custom label for false state
+
+    # Conditional / advanced
+    - name: extraction_mode
+      type: select
+      label: "Extraction Mode"
+      tabName: "Settings"            # Group under a tab in the UI
+      showIf: "advancedMode == true" # Conditional visibility
+      developerOnly: true            # Hide unless developer-mode enabled
+      showOnPopup: false             # Show in task creation popup
+      possibleValues:
+        - { value: auto, label: "Automatic" }
+        - { value: manual, label: "Manual" }
+
+    # Nested / list-of-objects
+    - name: line_items
+      type: list
+      listType: object               # object, primitive
+      listLabel: "Line Items"
+      listDescription: "Itemized invoice rows"
+      groupOptions:                  # Nested option definitions (each list entry is an object)
+        - { name: description, type: text, label: "Description", required: true }
+        - { name: quantity,    type: number, label: "Qty" }
+        - { name: amount,      type: number, label: "Amount" }
 ```
 
-## Assignment Rules
+| Option key | Purpose |
+|---|---|
+| `name` | Field identifier (required) |
+| `type` | `text`, `textarea`, `number`, `date`, `select`, `boolean`, `list`, etc. |
+| `subType` | Optional refinement of `type` |
+| `listType` | For `type: list` — `object` for nested editor, `primitive` for scalar list |
+| `groupOptions` | For `type: list` with `listType: object` — nested option defs |
+| `label` | UI label |
+| `falseLabel` | Custom label for `boolean` false state |
+| `hint` | Inline help text |
+| `description` | Longer description |
+| `required` | Boolean |
+| `default` | Default value |
+| `possibleValues` | Array of `{ value, label, description? }` for `select` |
+| `tabName` | UI tab grouping |
+| `showIf` | Expression toggling visibility |
+| `developerOnly` | Hidden unless developer mode |
+| `showOnPopup` | Show in creation popup |
+| `featureFlag` | Hide unless flag enabled |
+| `displayProperties` | Free-form UI hints |
+| `aliases` | Alternate names for migration/back-compat |
+
+## Forms
+
+Attach data forms to the task. Each form can have its own action buttons and panel visibility.
 
 ```yaml
-assignmentRules:
-  autoAssign: true                     # Automatically assign tasks
-  assignToRole: reviewer               # Role to assign to
-  assignToTeam: review-team            # Team slug
-```
-
-## Document Groups
-
-```yaml
-documentGroups:
-  - name: "Source Documents"
-    documentFamilyFilter: "*.pdf OR *.xlsx"   # File filter
-    maxHits: 5                         # Max documents to show
-    maxPages: 100                      # Max pages per document
-    maxSize: 10485760                  # Max file size (bytes, 10MB)
-    automaticallyAdd: true             # Auto-add matching documents
-    editable: true                     # Allow adding/removing docs
-    uploadOnly: false                  # Only allow uploads (no selection)
-    uniqueFilenames: true              # Enforce unique filenames
-    titlePrompt: |                     # AI prompt for task title generation
-      Generate a task title from the document content
-
-  - name: "Supporting Evidence"
-    documentFamilyFilter: "*.pdf"
-    automaticallyAdd: false
-    editable: true
-    uploadOnly: true
+metadata:
+  forms:
+    - dataFormRef: "${orgSlug}/invoice-form"   # Reference an org-level data-form
+      actions:
+        - { label: "Save Draft", type: save }
+        - { label: "Submit",     type: submit }
+      availablePanels:
+        documentStores: true
+        exceptions: true
+        properties: false
+      properties: {}                            # Free-form per-form config
 ```
 
 ## Actions
 
+Action buttons in the task UI. Schema is intentionally lean — extra behavior lives in `properties`.
+
 ```yaml
-actions:
-  - name: approve
-    label: "Approve"
-    targetStatus: approved             # Status to transition to
-    icon: check                        # Icon name
-    color: green                       # Button color
-    shortcut: "a"                      # Keyboard shortcut
-    setAttributes:                     # Attributes to set on action
-      approval_status: approved
-
-  - name: reject
-    label: "Reject"
-    targetStatus: rejected
-    icon: close
-    color: red
-    shortcut: "r"
-    setAttributes:
-      approval_status: rejected
-
-  - name: escalate
-    label: "Escalate"
-    targetStatus: escalated
-    icon: arrow-up
-    color: orange
+metadata:
+  actions:
+    - uuid: "approve-action"
+      type: approve                # Free-form discriminator the UI/orchestrator interprets
+      label: "Approve"
+      properties:
+        targetStatus: approved     # Status transition (free-form key)
+        icon: check
+        color: green
+        shortcut: "a"
+        setAttributes:
+          approval_status: approved
+    - uuid: "reject-action"
+      type: reject
+      label: "Reject"
+      properties:
+        targetStatus: rejected
+        icon: close
+        color: red
 ```
 
-## Custom Options
+> `TaskTemplateAction` only declares `uuid`, `type`, `label`, `properties` at the schema level. UI conventions for icon/color/targetStatus are stored inside `properties`.
+
+## Document Family Groups
+
+Renamed from `documentGroups`. Group documents that should be associated with the task.
 
 ```yaml
-options:
-  - tabName: "Settings"
-    name: extractionMode
-    label: "Extraction Mode"
-    type: select
-    required: true
-    default: "auto"
-    description: "How documents should be processed"
-    showIf: "advancedMode == true"     # Conditional visibility
-    developerOnly: false               # Developer-only flag
-    showOnPopup: true                  # Show in creation popup
-    possibleValues:
-      - value: auto
-        label: "Automatic"
-      - value: manual
-        label: "Manual"
-
-  - name: notifyOnComplete
-    label: "Notify on Completion"
-    type: boolean
-    default: true
+metadata:
+  documentFamilyGroups:
+    - name: "Source Invoices"
+      notes: "Primary documents for review"
+      documentFamilyFilter: "*.pdf"          # Filter expression
+      maxHits: 5                              # Max families to surface
+      sort: "createdOn desc"                  # Optional ordering
+      automaticallyAdd: true                  # Auto-attach matching families
+      editable: true                          # User may add/remove
+      uploadOnly: false                       # If true, only allow uploads
+      uniqueFilenames: true                   # Enforce unique filenames
+      maxPages: 100
+      hardMaxPages: 500
+      maxSize: 10485760                       # Bytes (10 MB)
+      titlePrompt: "Generate task title from this invoice"
 ```
 
-## Team Assignment
+## Team, Priority, AI Naming, Chat Prompt
 
 ```yaml
-teamSlug: data-review-team            # Assign template to team
+metadata:
+  teamSlug: finance-reviewers
+  priority: 2
+
+  aiNaming:
+    enabled: true
+    prompt: "Generate a concise task title from the document headers."
+
+  chatPrompt:
+    enabled: true
+    prompt: "Help me complete this invoice review."
 ```
 
-## Planned Activities
+## Execution Policy & Companion
+
+`executionPolicy` (from `session.ExecutionPolicy`) controls how the task interacts with sessions and the orchestrator. `companion` configures the workspace companion agent surfaced when the task is open.
 
 ```yaml
-planned: true                          # Enable auto-planning
-planTemplate:
-  steps:
-    - name: "Initial Review"
-      description: "Review extracted data for accuracy"
-      order: 1
-    - name: "Validation"
-      description: "Validate against business rules"
-      order: 2
-    - name: "Final Approval"
-      description: "Manager approval for high-value items"
-      order: 3
-      conditional: true
-      condition: "total_amount > 10000"
+metadata:
+  companion:
+    agentRuntimeRef: "${orgSlug}/review-agent"
+    moduleRefs:
+      - "${orgSlug}/review-helpers"
+    prompt: "Help the reviewer complete this invoice."
 ```
 
 ## Complete Example
 
 ```yaml
-taskTemplates:
-  - name: Invoice Review
-    slug: invoice-review
-    description: "Review and approve extracted invoice data"
-    metadata:
-      fields:
-        - name: approval_status
-          type: select
-          label: "Approval Status"
-          required: true
-          options:
-            - value: approved
-              label: "Approved"
-            - value: rejected
-              label: "Rejected for Correction"
-            - value: escalated
-              label: "Escalate to Manager"
+slug: invoice-review
+name: "Invoice Review"
+organizationId: ${orgSlug}
+description: "Manual review and approval of extracted invoice data"
+initialStatusSlug: todo
+metadata:
+  priority: 2
+  teamSlug: finance-reviewers
 
-        - name: review_notes
-          type: textarea
-          label: "Review Notes"
-          required: false
+  options:
+    - name: approval_status
+      type: select
+      label: "Approval"
+      required: true
+      possibleValues:
+        - { value: approved, label: "Approved" }
+        - { value: rejected, label: "Rejected" }
+        - { value: escalated, label: "Escalate to Manager" }
+    - name: review_notes
+      type: textarea
+      label: "Review Notes"
+    - name: confidence_override
+      type: number
+      label: "Manual Confidence Score"
 
-        - name: confidence_override
-          type: number
-          label: "Manual Confidence Score"
-          required: false
-
-      assignmentRules:
-        autoAssign: true
-        assignToRole: reviewer
-
-      documentGroups:
-        - name: "Invoice Documents"
-          documentFamilyFilter: "*.pdf"
-          maxHits: 3
-          automaticallyAdd: true
-          editable: false
-          titlePrompt: "Generate a review task title from the invoice"
-
+  forms:
+    - dataFormRef: "${orgSlug}/invoice-form"
       actions:
-        - name: approve
-          label: "Approve"
-          targetStatus: approved
-          icon: check
-          color: green
-          shortcut: "a"
-          setAttributes:
-            approval_status: approved
+        - { label: "Submit", type: submit }
 
-        - name: reject
-          label: "Reject"
-          targetStatus: rejected
-          icon: close
-          color: red
-          shortcut: "r"
+  actions:
+    - uuid: approve
+      type: approve
+      label: "Approve"
+      properties:
+        targetStatus: approved
+        icon: check
+        color: green
+        shortcut: "a"
+        setAttributes:
+          approval_status: approved
+    - uuid: reject
+      type: reject
+      label: "Reject"
+      properties:
+        targetStatus: rejected
+        icon: close
+        color: red
+        shortcut: "r"
 
-        - name: escalate
-          label: "Escalate"
-          targetStatus: escalated
-          icon: arrow-up
-          color: orange
+  documentFamilyGroups:
+    - name: "Invoice"
+      documentFamilyFilter: "*.pdf"
+      maxHits: 3
+      automaticallyAdd: true
+      editable: false
+      titlePrompt: "Generate a review task title from the invoice"
 
-      options:
-        - name: auto_approve_threshold
-          label: "Auto-Approve Threshold"
-          type: number
-          default: 0.95
-          description: "Auto-approve above this confidence"
-
-      planned: true
-      planTemplate:
-        steps:
-          - name: "Data Verification"
-            description: "Verify extracted fields match document"
-            order: 1
-          - name: "Validation Check"
-            description: "Run business rule validation"
-            order: 2
-          - name: "Approval Decision"
-            description: "Approve or reject the invoice"
-            order: 3
-
-  - name: Exception Resolution
-    slug: exception-resolution
-    description: "Resolve processing exceptions"
-    metadata:
-      fields:
-        - name: resolution_type
-          type: select
-          label: "Resolution"
-          required: true
-          options:
-            - value: corrected
-              label: "Data Corrected"
-            - value: reprocessed
-              label: "Reprocessed"
-            - value: rejected
-              label: "Document Rejected"
-        - name: resolution_notes
-          type: textarea
-          label: "Resolution Notes"
-
-      assignmentRules:
-        autoAssign: true
-        assignToRole: data_specialist
-
-      documentGroups:
-        - name: "Exception Documents"
-          documentFamilyFilter: "*"
-          automaticallyAdd: true
-
-      actions:
-        - name: resolve
-          label: "Mark Resolved"
-          targetStatus: resolved
-          icon: check-circle
-          color: green
+  aiNaming:
+    enabled: true
+    prompt: "Title from invoice number and vendor."
 ```
 
 ## Common Mistakes
 
 | Mistake | Fix |
-|---------|-----|
-| Missing `metadata` wrapper | Fields, actions, etc. must be inside `metadata` |
-| Action without `targetStatus` | Each action needs a status to transition to |
-| `options` vs `fields` confusion | `fields` are task data; `options` are configuration settings |
-| Document group filter too broad | Use specific patterns: `*.pdf` not `*` |
-| Plan steps without `order` | Always number steps for correct sequencing |
-| Missing `slug` on template | Required for API references and CLI operations |
+|---|---|
+| Authoring `planned: true` + `planTemplate.steps:` | Remove. Use a separate `activity-plan` resource and a `trigger` to launch it on task creation. |
+| Using `assignmentRules:` | Not in the schema. Use `metadata.teamSlug` for team ownership. |
+| Using `documentGroups:` | Renamed to `documentFamilyGroups:`. |
+| Splitting fields into separate `fields:` and `options:` arrays | Use a single `metadata.options:` array. |
+| Putting `targetStatus` / `icon` / `color` directly on an action | Move them into the action's `properties:` map. |
+| Project-scoped slug references like `task-template://org/project/slug` | Templates are org-scoped now: `task-template://orgSlug/slug` (2 parts only). |
+| Hardcoding a status UUID | Use `initialStatusSlug:` and ensure the project has the matching `task-status` bound. |
+| Re-creating the same template per project | Define once at org level; each project binds to it via project resources. |

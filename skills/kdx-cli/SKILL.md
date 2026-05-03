@@ -371,9 +371,45 @@ kdx store reindex my-org/my-store:1.0.0
 
 ---
 
+## Secret Commands
+
+The `kdx secret` plugin manages organization secrets. The values are passed via prompt or stdin only — they never appear on the command line, in shell history, or in process listings. The underlying API (`/api/organizations/{orgId}/secrets`) is intentionally not in the public OpenAPI spec.
+
+### secret list — List Secret Names
+
+```bash
+kdx secret list <org-slug>
+```
+
+Returns the names only. Values are never returned over the API.
+
+### secret set — Set a Secret Value
+
+```bash
+# Interactive — terminal prompts for the value (hidden input)
+kdx secret set <org-slug> <name>
+
+# Non-interactive — read value from stdin
+echo -n "<value>" | kdx secret set <org-slug> <name> --stdin
+```
+
+The value is sent to the server but never logged or echoed. Existing names are overwritten.
+
+### secret delete — Remove a Secret
+
+```bash
+kdx secret delete <org-slug> <name>
+```
+
+`<org-slug>` may be a slug *or* a UUID. Slugs resolve via `filter=slug:'...'` (exact match — the `query=` endpoint searches display names and would miss orgs whose slug differs from the display name).
+
+---
+
 ## Task Commands
 
-The `kdx task` command provides extended operations for tasks and their plans.
+The `kdx task` command provides extended operations for tasks.
+
+> **Activity refactor compatibility note (2026-05-02).** The platform's `Plan` concept has been renamed to `Activity` (backing tables: `kdxa_plans` → `kdxa_activities`, `kdxa_planned_items` → `kdxa_steps`), and the `/api/plans` back-compat shim has been removed. The `kdx task failures` and `kdx task reprocess` commands still surface "plan" terminology and call legacy paths — confirm against the installed CLI version before relying on them on a post-refactor server. If those commands fail, use the new `/api/activities` endpoints directly via `kdx run`.
 
 ### task failures — List Tasks with Failed Plans
 
@@ -568,19 +604,48 @@ manifest_version: "1.0"
 metadata_dir: resources
 
 resources:
-  # Group by resource type
+  # Group by resource type — see "Syncable Resource Types" below
   data-form:
     - forms/my-form.yml
   taxonomy:
     - taxonomies/my-taxonomy.yaml
   project-template:
     - project-templates/my-project.yml
+  activity-plan:                    # Org-scoped (push order 50)
+    - activity-plans/invoice-flow.yaml
+  task-template:                    # Org-scoped (push order 65)
+    - task-templates/invoice-review.yaml
+  task-status:                      # Org-scoped (push order 65)
+    - task-statuses/todo.yaml
+    - task-statuses/in-review.yaml
+  trigger:                          # Project-scoped (push order 75)
+    - triggers/auto-review.yaml
 
 # Modules (separate section — triggers code upload)
 modules:
   - models/my-model/model.yml
   - models/my-other-model/model.yml
 ```
+
+#### Syncable Resource Types (post-activity-refactor)
+
+| Canonical name | URI scheme | Scope | FilesystemDir | Push order | Notes |
+|---|---|---|---|---|---|
+| `module` | `module://` | org | `modules/` | 10 | Plus `model`, `model-runtime` aliases |
+| `taxonomy` | `taxonomy://` | org | `taxonomies/` | 20 | Aka `data-definition` |
+| `data-store` | `data-store://` | org | `data-stores/` | 30 | |
+| `data-form` | `data-form://` | org | `data-forms/` | 40 | |
+| `service-bridge` | `service-bridge://` | org | `service-bridges/` | 45 | |
+| `prompt-template` | `prompt-template://` | org | `prompt-templates/` | 45 | |
+| `knowledge-set` | `knowledge-set://` | org | `knowledge-sets/` | 45 | |
+| `activity-plan` | `activity-plan://` | **org** | `activity-plans/` | **50** | **NEW** — replaces inline `planTemplate` |
+| `project-template` | (no scheme) | org | `project-templates/` | 60 | |
+| `task-template` | `task-template://` | **org** | `task-templates/` | **65** | **Flipped from project to org scope** |
+| `task-status` | `task-status://` | **org** | `task-statuses/` | **65** | **Flipped from project to org scope** |
+| `assistant` | `assistant://` | project | `assistants/` | 70 | |
+| `trigger` | `trigger://` | **project** | `triggers/` | **75** | **NEW** — references an `activity-plan://` URI |
+
+> Push order matters: lower numbers push first. Triggers (75) are pushed after the activity-plans (50) they reference and the projects (60) / assistants (70) they live in.
 
 ### sync pull — Download Metadata
 
@@ -703,6 +768,18 @@ Pulled YAML files use `${org}` as a portable placeholder for the organization sl
 - **During push/deploy:** `${org}` is resolved back to the target organization slug
 
 No flags needed — this is automatic.
+
+### Resource Reference Sigils
+
+Project-templates and assistants can reference other org-level resources by slug. These sigils resolve to UUIDs at push/deploy time so the final payload is environment-agnostic:
+
+| Sigil | Resolves to |
+|---|---|
+| `${taskTemplate.<slug>}` | UUID of the org's `task-template` with the given slug |
+| `${activityPlan.<slug>}` | UUID of the org's `activity-plan` with the given slug |
+| `${taskStatus.<slug>}` | UUID of the org's `task-status` with the given slug |
+
+The CLI's resolver looks up the resource via the platform's `/api/resolve?path=<scheme>://<orgSlug>/<slug>` endpoint before substituting. Unresolved sigils fail the push with a clear error pointing at the missing resource.
 
 ### Knowledge Attachments
 

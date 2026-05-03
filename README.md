@@ -7,15 +7,16 @@ A [Claude Code](https://claude.ai/claude-code) plugin providing skills for autho
 | Skill | Description |
 |-------|-------------|
 | **data-definition** | Taxon hierarchies, data types, validation rules, conditional formatting, semantic extraction definitions |
-| **project-template** | Complete project blueprints — stores, assistants, taxonomies, data forms, workspaces, knowledge sets, status workflows |
+| **project-template** | Project blueprints — stores, assistants, taxonomies, data forms, status workflows, knowledge sets, triggers, and scheduled jobs |
 | **module** | Model modules (Python ML/AI) and skill modules (file packs) — runtime config, sidecars, inference options, deployment |
 | **data-form** | V2 schema-driven UI forms — UINode component trees, data binding, QuickJS scripting, Bridge API |
 | **assistant** | Event-driven processing pipelines — connections, subscriptions, multi-step orchestration, scheduling |
-| **task-template** | Task workflows — custom fields, assignment rules, document groups, actions, automated planning |
+| **task-template** | Org-scoped task definitions — options, forms, actions, document family groups, AI naming, team assignment |
+| **activity-plan** | Org-scoped step graphs — `CREATE_TASK`, `EXECUTION`, `BRIDGE_CALL`, `SCRIPT`, `LLM`, `APPROVAL`, `AGENT` steps with inputs schema and templates |
 | **knowledge-system** | Feature types, item types, knowledge sets — rule-based processing customization with DNF expressions |
 | **service-bridge** | External API proxy endpoints — centralized authentication, header management, caching |
 | **prompt-template** | LLM prompt configurations — extraction prompts, system prompts, knowledge-driven overrides |
-| **kdx-cli** | Kodexa CLI — kubectl-style commands, profile management, sync/deploy workflows, resource operations |
+| **kdx-cli** | Kodexa CLI — kubectl-style commands, profile management, sync/deploy workflows, secret management |
 
 ## Installation
 
@@ -67,7 +68,7 @@ When editing existing metadata or debugging issues, the skill loads the complete
 
 **data-definition** — Author taxonomy YAML for document extraction. Covers all 12 data types (STRING, NUMBER, CURRENCY, DATE, SELECTION, etc.), value paths, validation formula functions, conditional formatting, repeating groups, and semantic definitions.
 
-**project-template** — Author complete project blueprint YAML. Covers all 9 component collections (stores, assistants, taxonomies, data forms, workspaces, task templates, scheduled jobs, knowledge sets, status configs), template variables, and project options.
+**project-template** — Author project blueprint YAML. Covers stores, assistants, taxonomies, data forms, document/task/attribute status workflows, inline and org-level task templates, scheduled jobs, knowledge sets, project options (with companion + execution policy), and how triggers and activity-plans bind to projects.
 
 **module** — Author module YAML for both model (Python) and skill (file pack) types. Covers runtime configuration, sidecar dependencies, inference options, deployment defaults, Python entry point patterns, and magic parameter injection.
 
@@ -77,7 +78,9 @@ When editing existing metadata or debugging issues, the skill loads the complete
 
 **assistant** — Author assistant pipeline YAML. Covers connection types (STORE, CHANNEL, DOCUMENT_FAMILY, WORKSPACE), subscription expressions, multi-step pipeline chaining, extension pack structure, and Python implementation.
 
-**task-template** — Author task template YAML. Covers custom fields, assignment rules, document groups, action buttons with status transitions, custom options, and planned activity configuration.
+**task-template** — Author org-scoped task template YAML. Covers `metadata.options` (unified field/option list with `groupOptions` and `listType`), forms, action buttons, document family groups, AI naming, chat prompt, execution policy, companion config, and the `initialStatusSlug` that resolves against project-bound task-statuses.
+
+**activity-plan** — Author org-scoped activity plan YAML — the new home for orchestration that used to live inside `task_template.planTemplate`. Covers all seven step kinds (`CREATE_TASK`, `EXECUTION`, `BRIDGE_CALL`, `SCRIPT`, `LLM`, `APPROVAL`, `AGENT`), per-kind config schemas, JSON Schema inputs, default title/description templates, `dependsOn` outcomes, and how triggers fire activity plans on project events.
 
 ### Tier 3 — Advanced
 
@@ -89,7 +92,7 @@ When editing existing metadata or debugging issues, the skill loads the complete
 
 ### CLI & Operations
 
-**kdx-cli** — Use the Kodexa CLI (`kdx`) for platform operations. Covers profile management, resource CRUD (get, describe, apply, delete), sync/deploy workflows with `sync-config.yaml` and manifests, branch-mapped GitOps deployments, Python dataclass generation, and troubleshooting.
+**kdx-cli** — Use the Kodexa CLI (`kdx`) for platform operations. Covers profile management, resource CRUD (get, describe, apply, delete), sync/deploy workflows with `sync-config.yaml` and manifests, the syncable resource catalog (including `activity-plan`, `trigger`, org-scoped `task-template`/`task-status`), the `kdx secret` plugin, resource reference sigils (`${taskTemplate.<slug>}`, `${activityPlan.<slug>}`), branch-mapped GitOps deployments, Python dataclass generation, and troubleshooting.
 
 ## Documentation
 

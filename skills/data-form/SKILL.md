@@ -150,15 +150,34 @@ Event types: `script` (inline JS), `scriptRef` (named script), `emit` (bubble to
 ### kodexa.data (requires `data:read` or `data:write`)
 
 ```javascript
-kodexa.data.getDataObjects(filter)       // Get data objects
-kodexa.data.getDataObject(uuid)          // Get single object
-kodexa.data.getAttributes(uuid)          // Get attributes
-kodexa.data.getAttribute(uuid, path)     // Get single attribute
-kodexa.data.setAttribute(uuid, path, v)  // Set attribute value
-kodexa.data.addDataObject(parentUuid, p) // Add child object
-kodexa.data.deleteDataObject(uuid)       // Delete object
-kodexa.data.getTaxonomies()              // Get available taxonomies
+kodexa.data.getDataObjects(filter)             // Get data objects
+kodexa.data.getDataObject(uuid)                // Get single object
+kodexa.data.getAttributes(uuid)                // Get attributes
+kodexa.data.getAttribute(uuid, path)           // Get single attribute
+kodexa.data.setAttribute(uuid, path, v)        // Set attribute value
+kodexa.data.deleteAttribute(uuid, path, opts?) // Delete attribute (see options below)
+kodexa.data.addDataObject(parentUuid, p)       // Add child object
+kodexa.data.deleteDataObject(uuid)             // Delete object
+kodexa.data.getTaxonomies()                    // Get available taxonomies
 ```
+
+**`deleteAttribute(uuid, path, options?)` options:**
+
+| Option | Default | Behavior |
+|---|---|---|
+| `autoDeleteEmptyParent` | `false` | When `true`, the parent data object is deleted if removing this attribute leaves it empty. Used by transposed grid cells. Default does **not** cascade — the parent stays as an empty shell. |
+
+```javascript
+// Default: parent stays even if empty
+kodexa.data.deleteAttribute(rowUuid, "amount");
+
+// Cascade: parent is removed too if it's now empty
+kodexa.data.deleteAttribute(rowUuid, "amount", { autoDeleteEmptyParent: true });
+```
+
+### Exception Aggregation
+
+The `card:exceptions` component (and any helper that calls `getUniqueExceptions(...)`) now walks **both** data-object-level exceptions and attribute-level exceptions. This means exceptions migrated to attributes when a user interacts with a field will continue to surface in the panel. The helper `isAutoResolved()` distinguishes platform-generated closing comments from user overrides — useful when filtering "what did the user actually resolve?" vs. auto-cleared platform records.
 
 ### kodexa.navigation (requires `navigation`)
 
@@ -182,6 +201,8 @@ kodexa.form.getNodeRef(ref)              // Get component reference
 kodexa.http.get(path)                    // GET request
 kodexa.http.post(path, body)             // POST request
 ```
+
+> **Activity API note (2026-05-02).** The runtime field formerly known as `Activity.status` is now `Activity.lifecycleState`. If a script reads or filters activities via `kodexa.http.get('/api/activities/...')`, use `lifecycleState` (not `status`).
 
 ### kodexa.log (no permission needed)
 

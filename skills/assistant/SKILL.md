@@ -9,6 +9,21 @@ description: "Use when creating or editing Kodexa assistants — YAML configurat
 
 Assistants are event-driven processing pipelines in Kodexa. They connect to stores and channels, subscribe to events (new documents, status changes), and execute modules in sequence to process documents. Assistants can be reactive (triggered by events), schedulable (run on cron), or both.
 
+## Assistants vs Activity Plans (post-2026-05-02)
+
+The activity refactor introduced `activity-plan` (a graph of orchestrated steps) and `trigger` (event-driven launches of an activity). The two abstractions overlap with assistants — pick the right one:
+
+| Use case | Pick |
+|---|---|
+| Reactive document-processing pipeline (parse → extract → label → write) | **Assistant** (this skill) — designed for streaming document events |
+| Orchestrated workflow with human review, approvals, branches, multi-step gating | **`activity-plan` + `trigger`** (see `activity-plan` and `project-template` skills) |
+| Cron-driven module run (no event chain) | **Scheduled job** in project-template, *or* a `schedulable: true` assistant |
+| Wiring a service-bridge HTTP call into a pipeline | Either: an assistant module that does it, or an `activity-plan` step with `kind: BRIDGE_CALL` |
+
+In short: assistants are the right choice for *document-event-driven pipelines* (the platform's bread and butter); activity-plans are the right choice for *human-in-the-loop workflows and explicit step graphs*. They can coexist — an assistant can process a document, and the resulting task can fire a `trigger` that starts an `activity-plan`.
+
+> **Terminology note.** Where this skill (or older code) refers to "plans" or "planned items" produced by an assistant, the platform now persists those as `Activity` and `Step` rows. The runtime field formerly known as `Activity.status` is now `Activity.lifecycleState`. Subscription expressions that filter on activity-related events should use the new field name.
+
 ## When to Use
 
 - Creating a new assistant for document processing
