@@ -404,3 +404,4 @@ validationRules:
 | Using `FORMULA` without proper formula syntax | Formulas reference field names, use SUM/COUNT/IF functions |
 | Wrong validation formula reference in groups | Use `group_name.field_name` (e.g., `line_items.quantity`) |
 | Missing `overridable` on validation rules | Always specify — `false` for hard requirements, `true` for warnings |
+| Using `!isblank({ChildField})` on a group to check child rows exist | Reference the **group name** itself: `!isblank({GroupName})`. `{GroupName}` resolves to the child data objects array; `isblank` returns true when the array is empty. `{ChildField}` resolves against the group object's own attributes (none), so it always evaluates as blank. |
