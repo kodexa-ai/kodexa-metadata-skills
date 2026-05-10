@@ -13,7 +13,22 @@ The Kodexa knowledge system connects **what you know** about documents (features
 - **Knowledge Item Types** — Define configurable processing behaviors (prompt overrides, validation rules, extraction settings)
 - **Knowledge Sets** — Bridge features to items using DNF (Disjunctive Normal Form) expressions
 
-**Important**: Feature types and item types are **immutable** — they cannot be updated or deleted once created. Plan carefully before creating them.
+**Mutability rules** (verified against the platform code):
+
+| Entity | Mutable? | Notes |
+|---|---|---|
+| **`KnowledgeFeatureType`** | **Yes** — every field can be edited via PUT after creation. Name, color, icon, options, extendedOptions, labelJsonPath, useJSONata, active, slug all updateable. |
+| **`KnowledgeItemType`** | **Yes** — every field can be edited via PUT after creation. Name, slug, description, options, supportsAttachment all updateable. |
+| **`KnowledgeFeature.properties`** (instance core props) | **Effectively no** — physically writable, but the slug is computed from `properties` at create time and **does not recompute on update**. Editing `properties` after create produces a stale hash that no longer matches the slug. Treat as immutable in practice. |
+| **`KnowledgeFeature.extendedProperties`** (instance extended props) | **Yes** — fully mutable. Not part of the slug hash. Use this for any per-instance fact that may change over time. |
+| **`KnowledgeItem`** | **Yes** — title, description, properties, sequenceOrder, active, attachmentId all updateable via PUT. Item slug is user-supplied (no hash), so changing it is fine. |
+
+**Practical implications:**
+
+- **Add options to a feature/item type whenever you need to.** No need to version the type or pre-add `extras` blob fields as a safety valve — that advice belonged to a previous, incorrect understanding of immutability.
+- **Removing a required option from a type is risky** — existing instances may not satisfy the new schema. Mark options optional first, then drop later.
+- **Changing a feature type's `labelJsonPath` retroactively** affects how every existing instance is displayed. Test in a non-prod org first.
+- **For instance core properties (the ones that hash into the slug):** structure your initial design carefully because changing them later leaves the slug pointing at the old hash. If the property values must change, **delete the feature and recreate it** with the new values (which will produce a new slug). Anything referencing the old slug needs to be updated to match.
 
 ## CRITICAL: Feature Instance Slug Computation
 
@@ -78,7 +93,7 @@ Generate all three YAML definitions as a coordinated set.
 Defines a category of document characteristic.
 
 ```yaml
-slug: vendor                           # Required: unique, immutable once created
+slug: vendor                           # Required: unique. Editable later via PUT.
 name: "Vendor"                         # Required: display name
 description: "The vendor/supplier"     # Description
 active: true                           # Active flag
@@ -130,7 +145,7 @@ useJSONata: false                      # Use JSONata instead of JSONPath
 Defines a configurable processing behavior.
 
 ```yaml
-slug: prompt-override                  # Required: unique, immutable once created
+slug: prompt-override                  # Required: unique. Editable later via PUT.
 name: "Prompt Override"                # Required: display name
 description: "Custom extraction prompt for specific fields"
 active: true
@@ -167,6 +182,141 @@ icon: "chat-bubble"
 
 labelJsonPath: "$.targetField"
 ```
+
+## Option Types Reference
+
+`options` and `extendedOptions` (on feature types) and `options` (on item types) accept a richer type vocabulary than just primitives. This is the same option machinery used across the platform (assistants, modules, taxonomies, project templates) — anything those support, knowledge types support too.
+
+### Basic types
+
+| `type:` | Use for | Notable extras |
+|---|---|---|
+| `string` | Single-line text | `password: true` masks input; `possibleValues` constrains it |
+| `text` | Multi-line text (textarea) | `lines: N` sets initial height |
+| `number` | Numeric input | `min`, `max` for validation |
+| `boolean` | Checkbox / toggle | — |
+| `select` | Dropdown | `possibleValues: [{value, label}]` required |
+| `code` | Syntax-highlighted code editor | Use for regex, JSONata, scripts — much nicer than `string` |
+| `script` | Multi-language script editor | — |
+
+### Composite types
+
+| `type:` | Use for | How |
+|---|---|---|
+| `list` + `listType: string` | Array of strings | UI gives add/remove buttons |
+| `list` + `listType: object` | Array of structured rows | Define each row's fields under `groupOptions:` |
+| `object` | Single grouped sub-record | Define fields under `groupOptions:`; set `properties.collapsible: true` for collapsible UI |
+
+```yaml
+# Array of structured rows — like an editable table
+options:
+  - name: fieldMappings
+    type: list
+    listType: object
+    label: "Charge type → service mappings"
+    groupOptions:
+      - name: serviceType
+        type: string
+        required: true
+      - name: regex
+        type: code              # gets syntax highlighting
+        required: true
+```
+
+```yaml
+# Bounded numeric tuple — modeled as an object with named fields
+options:
+  - name: bbox
+    type: object
+    label: "Bounding box (page coords)"
+    properties:
+      collapsible: true
+    groupOptions:
+      - name: x1
+        type: number
+        min: 0
+      - name: y1
+        type: number
+        min: 0
+      - name: x2
+        type: number
+      - name: y2
+        type: number
+```
+
+### Platform-aware types
+
+Specialised pickers that resolve against existing org resources:
+
+| `type:` | Picks |
+|---|---|
+| `documentStore` / `moduleStore` / `tableStore` / `taxonomyStore` | Resource of that kind |
+| `document` | Specific document (by search) |
+| `workspace` | Workspace |
+| `taxon` | Single taxonomy element |
+| `taxon_label` | Taxonomy label |
+| `taxon_with_properties` | Taxon + configured properties |
+| `taxon-lookup` | Hierarchical taxonomy search |
+| `documentStatus` / `attributeStatus` / `taskStatus` | Status enum |
+| `cloud-model` | Cloud LLM (with caching) |
+| `cloud-embedding` | Embedding model |
+| `data-form` | Data form configuration |
+
+Use `taxon` rather than `string` whenever the option references a taxonomy element — the UI gives users a real picker instead of free-text typing the path.
+
+### Conditional visibility (`showIf`)
+
+Hide an option until another option's value is set. The expression is JavaScript evaluated against the option object:
+
+```yaml
+options:
+  - name: mode
+    type: select
+    label: Capture mode
+    possibleValues:
+      - value: line
+        label: "Line marker"
+      - value: column
+        label: "Column marker"
+
+  - name: lineMarker
+    type: code
+    label: "Line regex"
+    showIf: "this.mode === 'line'"
+
+  - name: columnHeader
+    type: string
+    label: "Column header"
+    showIf: "this.mode === 'column'"
+```
+
+This is the canonical way to model rules whose schema branches based on a mode flag — no need to invent multiple item types just because parameters differ across modes.
+
+### Other UX modifiers
+
+- `password: true` — masks the value (use for API keys, secrets)
+- `developerOnly: true` — only visible when the user toggles "Show Developer Tools"
+- `properties.collapsible: true` — `object` group renders as a collapsible card
+- `default:` — must structurally match the type (string for `string`, array for `list`, object for `object`); mismatched defaults silently break the editor
+
+### Anti-patterns
+
+- **Don't use `text` for what should be a `list`.** Users get a multiline blob and your code has to parse it. Use `list` + `listType: string` instead.
+- **Don't use `text` for structured config.** Use `object` + `groupOptions` so the UI gives proper inputs and your code receives a typed map.
+- **Don't `string` a regex.** Use `code` — the UI gets syntax highlighting and the value is still a plain string in code.
+- **Don't `string` a taxon path.** Use `taxon` — eliminates an entire class of typo bugs.
+
+### Why this matters
+
+When migrating any hardcoded JSON config to knowledge items, the platform's option types let you keep the structure typed and editable rather than dumping JSON blobs into `text` fields. Almost every JSON shape you'd want to migrate maps cleanly:
+
+| JSON shape | Use |
+|---|---|
+| `["a", "b", "c"]` | `list` + `listType: string` |
+| `{"x": "regex"}` (string→string map with dynamic keys) | `list` + `listType: object` with `{key, value}` row |
+| `[1.5, 3.5, 2.0, 4.0]` (fixed-length tuple) | `object` with named numeric fields |
+| `{flag: true, mode: "line", marker: "..."}` | `object` with `select` + `boolean` + branchy `showIf` fields |
+| Nested config | `object` containing `list`/`object` (≤3 levels deep) |
 
 ## Knowledge Set
 
@@ -572,7 +722,8 @@ knowledgeSets:
 | **Feature expression using wrong field** | Expression FEATURE nodes use `slug` (the computed hash slug), NOT `featureUuid` |
 | **Including extendedProperties in hash** | Only `properties` are included in the slug hash, NOT `extendedProperties` |
 | **Unsorted JSON keys in hash** | Keys must be sorted alphabetically before hashing (JSON canonical form) |
-| Trying to update a feature/item type | Types are immutable — create a new version instead |
+| Editing a feature instance's `properties` after creation | Don't — the slug was hashed from the original `properties` and **does not recompute on update**, leaving a stale slug. Edit `extendedProperties` instead, or delete + recreate the feature with the new properties (which produces a new slug). |
+| Treating feature / item types as immutable | They're not — every field is editable via PUT. Add options as needed. (Removing a `required` option is still risky for existing instances; soften to optional first.) |
 | Missing UUID on features in clauses | Features need `uuid` field for clause references |
 | Feature type without `labelJsonPath` | Required for displaying feature instances |
 | Missing `featureTypeRef` on features | Must reference `orgSlug/typeSlug` |
