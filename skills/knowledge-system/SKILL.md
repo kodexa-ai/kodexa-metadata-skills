@@ -78,6 +78,49 @@ The same computed slug must appear in BOTH:
 - Setting up knowledge-driven routing and prioritization
 - Building a complete knowledge configuration for a project
 
+## YAML envelope for `kdx apply`
+
+Every knowledge resource YAML that `kdx apply` accepts needs the same six-field envelope at the top, then resource-specific fields below. **Never embed environment-specific UUIDs** (`organizationId`, `featureTypeId`, `knowledgeItemTypeId`, `knowledgeSetId`) — the platform resolves slug-based refs server-side as of the 2026-05-10 platform release.
+
+```yaml
+type: knowledgeFeatureType        # camelCase: knowledgeFeatureType | knowledgeItemType | knowledgeFeature | knowledgeItem | knowledgeSet
+ref: <orgSlug>/<slug>:<version>   # canonical resource reference (e.g. "acme-corp/vendor:1.0.0")
+orgSlug: <orgSlug>                # literal — NOT a ${orgSlug} placeholder. Resolved server-side to organizationId.
+version: 1.0.0                    # semver string
+slug: <slug>                      # the resource's slug (same as in ref)
+name: ...                         # display name (not on KnowledgeFeature — its slug IS its identity)
+# … resource-specific fields …
+```
+
+**For options (on feature types and item types)** — emit a bare YAML list, NOT a wrapped `{options: [...]}` object:
+
+```yaml
+options:
+  - name: ...
+    type: string
+    ...
+extendedOptions:
+  - name: ...
+    ...
+```
+
+The kodexa-ui's `EditKnowledgeItemPanel` checks `options?.length` and iterates `v-for="option in options"`. A wrapped `{options: [...]}` shape has no `.length` so the UI silently renders "No configuration options available" and hides every field.
+
+> **Note on a recent platform fix:** the OpenAPI generator used to emit `{type: "object"}` for `options`/`extendedOptions` (they're `json.RawMessage` server-side), which made `kdx apply` reject bare arrays even though the server accepted them. That was loosened in `the 2026.4 platform release` (merged into develop 2026-05-11) — RawMessage fields now emit no `type` constraint, so the CLI accepts whatever shape the UI wants. If you hit `Error at "/options": value must be an object`, you're on an older CLI build that pre-dates the fix.
+
+**Slug-based refs to resolve server-side:**
+
+| Resource | Field | Resolves to |
+|---|---|---|
+| All (FeatureType, ItemType, Feature, Item, Set) | `orgSlug` | `organizationId` (UUID) |
+| KnowledgeFeature | `featureTypeRef: "<orgSlug>/<featureTypeSlug>"` | `featureTypeId` |
+| KnowledgeItem | `knowledgeItemTypeRef: "<orgSlug>/<itemTypeSlug>"` | `knowledgeItemTypeId` |
+| KnowledgeItem | `knowledgeSetSlug: "<setSlug>"` | `knowledgeSetId` (scoped to `orgSlug`) |
+
+If a YAML provides both the slug ref AND the UUID, the UUID wins (backward-compatible). The pattern: only resolve when the UUID field is empty.
+
+**Features and items are standalone resources, not inlined in sets.** `kdx apply -f set.yml` silently drops any `features: [...]` or `items: [...]` arrays inlined inside the set body — only the set's metadata and `featureExpression` survive. Author features, items, and the set as **separate YAML files**, and let the set's `featureExpression` reference features by their content-addressable slug. The set's `knowledgeItems` array auto-populates server-side from items whose `knowledgeSetSlug` matches the set.
+
 ## Interactive Wizard
 
 1. **Variations** — What varies across your documents? (vendor, document type, language, department)
@@ -93,12 +136,16 @@ Generate all three YAML definitions as a coordinated set.
 Defines a category of document characteristic.
 
 ```yaml
+type: knowledgeFeatureType             # envelope
+ref: my-org/vendor:1.0.0               # canonical reference
+orgSlug: my-org                        # literal slug — resolved to organizationId server-side
+version: 1.0.0
 slug: vendor                           # Required: unique. Editable later via PUT.
 name: "Vendor"                         # Required: display name
-description: "The vendor/supplier"     # Description
-active: true                           # Active flag
+description: "The vendor/supplier"
+active: true
 
-# Core options — required properties of a feature instance
+# Core options — required properties of a feature instance. Bare YAML list.
 options:
   - name: vendorId
     type: string
@@ -116,7 +163,7 @@ options:
       - value: "standard"
         label: "Standard Vendor"
 
-# Extended options — additional metadata
+# Extended options — additional metadata. Bare list, same as above.
 extendedOptions:
   - name: displayName
     type: string
@@ -145,12 +192,16 @@ useJSONata: false                      # Use JSONata instead of JSONPath
 Defines a configurable processing behavior.
 
 ```yaml
+type: knowledgeItemType                # envelope
+ref: my-org/prompt-override:1.0.0
+orgSlug: my-org                        # resolved to organizationId server-side
+version: 1.0.0
 slug: prompt-override                  # Required: unique. Editable later via PUT.
-name: "Prompt Override"                # Required: display name
+name: "Prompt Override"
 description: "Custom extraction prompt for specific fields"
 active: true
 
-# Options — what can be configured per item instance
+# Options — what can be configured per item instance. Bare YAML list.
 options:
   - name: targetField
     type: string
@@ -181,6 +232,62 @@ color: "#8B5CF6"
 icon: "chat-bubble"
 
 labelJsonPath: "$.targetField"
+```
+
+**Flag-only item types** — rules whose presence is the entire signal (no parameters):
+
+```yaml
+type: knowledgeItemType
+ref: my-org/no-invoice-date:1.0.0
+orgSlug: my-org
+version: 1.0.0
+slug: no-invoice-date
+name: "No Invoice Date"
+description: "Flag-only rule — presence is the entire signal; no per-vendor parameters."
+options: []                            # empty list — bare, no wrapper
+```
+
+## Knowledge Feature (standalone)
+
+Feature instances are now their own YAML files. The platform de-duplicates by `slug` (content-addressable), so the same feature can be referenced by many sets' `featureExpression`.
+
+```yaml
+type: knowledgeFeature
+ref: my-org/vendor-c410a049207c974c9a4907e1fa008cc0:1.0.0  # ref includes the computed slug
+orgSlug: my-org
+version: 1.0.0
+slug: vendor-c410a049207c974c9a4907e1fa008cc0              # computed from properties hash
+featureTypeRef: my-org/vendor                              # resolved to featureTypeId server-side
+properties:                                                # included in slug hash
+  vendorId: "ACME-001"
+  vendorCategory: "preferred"
+extendedProperties:                                        # NOT in slug hash
+  displayName: "Acme Corporation"
+  website: "https://acme.com"
+active: true
+```
+
+## Knowledge Item (standalone)
+
+Item instances live in their own YAML files. The `knowledgeSetSlug` field declares which set they belong to — the platform resolves it to `knowledgeSetId` server-side (org-scoped).
+
+```yaml
+type: knowledgeItem
+ref: my-org/acme-invoice-prompt:1.0.0
+orgSlug: my-org
+version: 1.0.0
+slug: acme-invoice-prompt
+title: "Acme Invoice Number Prompt"
+description: "Custom prompt for Acme invoice numbers"
+knowledgeItemTypeRef: my-org/prompt-override        # resolved to knowledgeItemTypeId
+knowledgeSetSlug: vendor-specific-extraction        # resolved to knowledgeSetId (org-scoped)
+properties:
+  targetField: "invoice/invoice_number"
+  promptText: |
+    Extract the Acme invoice number.
+    Acme uses format: ACME-YYYY-NNNNN.
+active: true
+sequenceOrder: 1
 ```
 
 ## Option Types Reference
@@ -320,74 +427,72 @@ When migrating any hardcoded JSON config to knowledge items, the platform's opti
 
 ## Knowledge Set
 
-Bridges features to items using DNF expressions.
+The set is **featureExpression-only** when authored for `kdx apply`. Features and items live in their own YAML files (see the two sections above); the set references features by their content-addressable slug in `featureExpression`. The set's `knowledgeItems` collection auto-populates server-side from items whose `knowledgeSetSlug` matches.
 
 ```yaml
-slug: vendor-specific-extraction       # Required: unique identifier
-name: "Vendor-Specific Extraction"     # Display name
+type: knowledgeSet
+ref: my-org/vendor-specific-extraction:1.0.0
+orgSlug: my-org                          # resolved to organizationId server-side
+version: 1.0.0
+slug: vendor-specific-extraction         # Required: unique identifier
+name: "Vendor-Specific Extraction"
 description: "Customize extraction per vendor"
-setType: extraction                    # Set type
+setType: extraction                      # Set type
 active: true
-priority: 5                           # 0-10, higher = applied first
-status: ACTIVE                        # PENDING_REVIEW, ACTIVE
+priority: 5                              # 0-10, higher = applied first
+status: ACTIVE                           # PENDING_REVIEW, ACTIVE
 
-# Feature instances used in this set
-# IMPORTANT: Feature slugs are computed as {featureTypeSlug}-{sha256(properties)[:32]}
-features:
-  - slug: vendor-c410a049207c974c9a4907e1fa008cc0  # Computed from properties hash
-    featureTypeRef: "my-org/vendor"    # Reference to feature type
-    properties:                        # Core option values (included in hash)
-      vendorId: "ACME-001"
-      vendorCategory: "preferred"
-    extendedProperties:                # Extended option values (NOT in hash)
-      displayName: "Acme Corporation"
-      website: "https://acme.com"
-    active: true
-    uuid: "feat-uuid-1"               # UUID for clause references
-
-  - slug: vendor-fc0427f8993d7dcaa1156510165a4f21  # Computed from properties hash
-    featureTypeRef: "my-org/vendor"
-    properties:
-      vendorId: "GLOBEX-002"
-    active: true
-    uuid: "feat-uuid-2"
-
-# Item instances — the behaviors to apply
-items:
-  - slug: acme-invoice-prompt
-    title: "Acme Invoice Number Prompt"
-    description: "Custom prompt for Acme invoice numbers"
-    knowledgeItemTypeRef: "my-org/prompt-override"
-    properties:
-      targetField: "invoice/invoice_number"
-      promptText: |
-        Extract the Acme invoice number.
-        Acme uses format: ACME-YYYY-NNNNN (e.g., ACME-2024-00123).
-        Look in the top-right corner of the first page.
-      includeExamples: true
-    active: true
-    sequenceOrder: 1
-
-# DNF Clauses — connect features to items
-# Clauses are OR'd together; features within a clause are AND'd
-clauses:
-  - features:                          # This clause matches Acme documents
-      - featureUuid: "feat-uuid-1"
-        positive: true                 # Feature must be present
-
-  - features:                          # This clause matches Globex documents
-      - featureUuid: "feat-uuid-2"
-        positive: true
-
-# Feature expression (tree-based matching using computed feature slugs)
+# Feature expression — tree of FEATURE/AND/OR/NOT nodes referencing features
+# by their content-addressable slugs. Features themselves are standalone
+# resources (see "Knowledge Feature (standalone)" above).
 featureExpression:
   type: OR
   children:
     - type: FEATURE
-      slug: vendor-c410a049207c974c9a4907e1fa008cc0
+      slug: vendor-c410a049207c974c9a4907e1fa008cc0      # ACME-001 feature
     - type: FEATURE
-      slug: vendor-fc0427f8993d7dcaa1156510165a4f21
+      slug: vendor-fc0427f8993d7dcaa1156510165a4f21      # GLOBEX-002 feature
 ```
+
+### Authoring patterns: one-per-rule vs one-per-vendor sets
+
+Two common shapes for organizing knowledge sets — pick based on whether the item type has options:
+
+**Flag-only rule → one set per RULE.** All vendors that need the rule are clauses in the `featureExpression`. The set contains exactly one shared item (with empty `properties: {}`).
+
+```yaml
+# Set: rule-no-invoice-date
+type: knowledgeSet
+slug: rule-no-invoice-date
+featureExpression:
+  type: OR
+  children:
+    - { type: FEATURE, slug: vendor-<hash1> }
+    - { type: FEATURE, slug: vendor-<hash2> }
+    # ... N more vendors ...
+# Companion item file (knowledge-items/rule-no-invoice-date-apply.yml):
+#   type: knowledgeItem
+#   slug: rule-no-invoice-date-apply
+#   knowledgeItemTypeRef: my-org/no-invoice-date
+#   knowledgeSetSlug: rule-no-invoice-date
+#   properties: {}
+```
+
+**Parameterized rule → one set per VENDOR.** Each vendor has their own set, scoped by their feature; the set contains one item per parameterized rule that vendor uses, with vendor-specific properties.
+
+```yaml
+# Set: vendor-acme01
+type: knowledgeSet
+slug: vendor-acme01
+featureExpression:
+  type: FEATURE
+  slug: vendor-<acme01-hash>
+# Companion item files (one per applicable rule):
+#   - vendor-acme01-custom-tax-rules.yml  → properties = {mappings: [...]}
+#   - vendor-acme01-line-item-capture.yml → properties = {mode: column, ...}
+```
+
+A vendor with both kinds of rules participates in N rule-set memberships (as clause features) AND has their own per-vendor set containing the parameterized items. The set→item linkage is solely via `knowledgeSetSlug` on each item — the set YAML stays clean (no inline items).
 
 ## Set-Level Attachments
 
@@ -729,5 +834,6 @@ knowledgeSets:
 | Missing `featureTypeRef` on features | Must reference `orgSlug/typeSlug` |
 | Knowledge set without expression | Need a `featureExpression` to connect features to items |
 | Options vs extendedOptions confusion | Options = required core properties (included in slug hash); extendedOptions = additional metadata (NOT in hash) |
+| **Wrapping `options:` in `{options: [...]}`** | Emit `options:` as a bare YAML list. The kodexa-ui reads `options.length` and iterates `v-for="o in options"` — a wrapper hides every field. (Pre-2026.4 CLIs may still reject bare arrays with "value must be an object" — that was fixed in `the 2026.4 platform release`; if you see it, your CLI is older than the deploy that picked up the loosened OpenAPI spec.) |
 | **Using per-item attachments for shared images** | Use set-level attachments when images are referenced in markdown across multiple items; per-item attachments are for single-item files only |
 | **Wrong attachment URL scheme** | Use `attachment://attachmentId` (not `http://` or relative paths) to reference set-level attachments in markdown |
