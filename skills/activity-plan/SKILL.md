@@ -175,6 +175,76 @@ Every step in `steps` shares the same envelope:
 
 > **Migration note.** Old `planTemplate` items used the key `script:` for the body. The activity-plan canonical key is **`scriptBody:`** — Step A migrations rename automatically; new authoring should use `scriptBody`.
 
+#### Runtime — what's available inside `scriptBody`
+
+The script runs in a GoJA (Go-embedded JS) VM with these globals:
+
+| Symbol                                 | Purpose                                                              |
+|----------------------------------------|----------------------------------------------------------------------|
+| `context`                              | Activity context (`context.extracted`, `context.params`, ...)        |
+| `families`                             | Document families attached to the activity (array)                   |
+| `loadDocument(familyId)` → `Document`  | Materialise a document for navigation/mutation                       |
+| `serviceBridge.call(ref, op, body)`    | Synchronous bridge call. `ref` = `'${org}/<bridge-slug>'`            |
+| `log.info / .warn / .error / .debug`   | Structured logging — surfaces in the run log                         |
+| `action('outcome')`                    | Declare the chosen `scriptActions` outcome (drives `dependsOn`)      |
+
+The `Document` exposes navigation + mutation methods that are thin wrappers
+over the Go bindings in `kodexa-document/lib/go/pkg/scripting/`:
+
+- `doc.findFirstDataObjectByPath(path)` — fetch the first data object whose
+  data path matches.
+- `doc.getOrCreate(path)` — fetch-or-create at a top-level path.
+- `obj.getOrCreateChild(path)` — fetch-or-create a **child data object**.
+- `obj.setAttribute(name, value)` / `obj.addAttribute({...})` — write
+  values.
+- `obj.getFirstAttributeValue(name)` / `obj.getAttributeByName(name)` —
+  read values.
+
+#### ⚠️ Critical gotcha — taxon paths are always FULL paths
+
+The Go bindings validate every path argument against the document's
+taxonomies by **exact match on the taxon's `Path` field**
+(`Taxonomy.FindTaxonByPath` in `kodexa-document/lib/go/internal/domain/document/taxonomy.go`).
+The taxon's `Path` is the full slash-separated hierarchy, e.g.
+`Invoice/line_items`.
+
+This means:
+
+```js
+// ❌ WRONG — validator looks for a taxon with Path == "line_items"
+// (does not exist) and panics:
+//   GoError: taxon path "line_items" does not exist in taxonomy "..."
+const bm = bs.getOrCreateChild('line_items');
+
+// ✅ RIGHT — full path matches Invoice/line_items in the taxonomy
+const bm = bs.getOrCreateChild('Invoice/line_items');
+```
+
+The same rule applies to `doc.getOrCreate('Invoice')`,
+`obj.addChild({path: 'Invoice/charges'})`, and any other
+method that takes a `path` argument.
+
+**Exception — `setAttribute` and `addAttribute`** combine the parent's
+path with the attribute name internally, so they take a bare attribute
+name:
+
+```js
+bm.setAttribute('status', 'MATCHED');
+// validator checks parent.path + "/" + name
+//   = "Invoice/line_items" + "/" + "status"
+//   = "Invoice/line_items/status"  ✓
+```
+
+To debug a `taxon path … does not exist` error:
+
+1. Check the deployed taxonomy actually contains the taxon at the expected
+   path (`kdx run data-definitions list-taxonomies --filter "slug:'...'" -o json | jq '.. | objects | select(.path?)'`).
+2. Confirm the *exact* `path` argument the script passes matches that
+   taxon's `Path` field byte-for-byte.
+3. Don't confuse `name`, `externalName`, `label`, and `path`. Only `path`
+   matters for these helpers — `name` and `externalName` are display
+   concerns.
+
 ### LLM — call an LLM with a prompt
 
 ```yaml
