@@ -204,7 +204,7 @@ kdx run knowledge-sets list-knowledge-set --filter "project.name:'My Project Nam
 kdx run knowledge-sets list-knowledge-set --orgSlug my-org --filter "slug:'my-knowledge-set-slug'"
 
 # Filter by name with wildcards
-kdx run knowledge-sets list-knowledge-set --orgSlug my-org --filter "name~'*Water*'"
+kdx run knowledge-sets list-knowledge-set --orgSlug my-org --filter "name~'*Vendor*'"
 
 # Combine org and project filters
 kdx run knowledge-sets list-knowledge-set --orgSlug my-org --filter "project.slug:'my-project'"
@@ -373,7 +373,7 @@ kdx store reindex my-org/my-store:1.0.0
 
 ## Secret Commands
 
-The `kdx secret` plugin manages organization secrets. The values are passed via prompt or stdin only — they never appear on the command line, in shell history, or in process listings. The underlying API (`/api/organizations/{orgId}/secrets`) is intentionally not in the public OpenAPI spec.
+The `kdx secret` plugin manages organization secrets. The values are passed via prompt or stdin only — they never appear on the command line, in shell history, or in process listings. Secret values are write-only — the API never returns them.
 
 ### secret list — List Secret Names
 

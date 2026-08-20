@@ -106,7 +106,7 @@ extendedOptions:
 
 The kodexa-ui's `EditKnowledgeItemPanel` checks `options?.length` and iterates `v-for="option in options"`. A wrapped `{options: [...]}` shape has no `.length` so the UI silently renders "No configuration options available" and hides every field.
 
-> **Note on a recent platform fix:** the OpenAPI generator used to emit `{type: "object"}` for `options`/`extendedOptions` (they're `json.RawMessage` server-side), which made `kdx apply` reject bare arrays even though the server accepted them. That was loosened in `the 2026.4 platform release` (merged into develop 2026-05-11) — RawMessage fields now emit no `type` constraint, so the CLI accepts whatever shape the UI wants. If you hit `Error at "/options": value must be an object`, you're on an older CLI build that pre-dates the fix.
+> **If `kdx apply` rejects a bare `options:` array** with `Error at "/options": value must be an object`, your `kdx` build pre-dates the 2026.4 platform release that loosened the generated OpenAPI constraint for these fields. Upgrade `kdx` — no YAML change is needed.
 
 **Slug-based refs to resolve server-side:**
 
@@ -320,7 +320,7 @@ options:
   - name: fieldMappings
     type: list
     listType: object
-    label: "Charge type → service mappings"
+    label: "Source field → taxon mappings"
     groupOptions:
       - name: serviceType
         type: string
@@ -834,6 +834,6 @@ knowledgeSets:
 | Missing `featureTypeRef` on features | Must reference `orgSlug/typeSlug` |
 | Knowledge set without expression | Need a `featureExpression` to connect features to items |
 | Options vs extendedOptions confusion | Options = required core properties (included in slug hash); extendedOptions = additional metadata (NOT in hash) |
-| **Wrapping `options:` in `{options: [...]}`** | Emit `options:` as a bare YAML list. The kodexa-ui reads `options.length` and iterates `v-for="o in options"` — a wrapper hides every field. (Pre-2026.4 CLIs may still reject bare arrays with "value must be an object" — that was fixed in `the 2026.4 platform release`; if you see it, your CLI is older than the deploy that picked up the loosened OpenAPI spec.) |
+| **Wrapping `options:` in `{options: [...]}`** | Emit `options:` as a bare YAML list. The kodexa-ui reads `options.length` and iterates `v-for="o in options"` — a wrapper hides every field. (Pre-2026.4 CLIs may still reject bare arrays with "value must be an object" — upgrade `kdx`.) |
 | **Using per-item attachments for shared images** | Use set-level attachments when images are referenced in markdown across multiple items; per-item attachments are for single-item files only |
 | **Wrong attachment URL scheme** | Use `attachment://attachmentId` (not `http://` or relative paths) to reference set-level attachments in markdown |

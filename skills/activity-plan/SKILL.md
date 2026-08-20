@@ -189,7 +189,7 @@ The script runs in a GoJA (Go-embedded JS) VM with these globals:
 | `action('outcome')`                    | Declare the chosen `scriptActions` outcome (drives `dependsOn`)      |
 
 The `Document` exposes navigation + mutation methods that are thin wrappers
-over the Go bindings in `kodexa-document/lib/go/pkg/scripting/`:
+over the platform's Go document bindings:
 
 - `doc.findFirstDataObjectByPath(path)` — fetch the first data object whose
   data path matches.
@@ -203,8 +203,7 @@ over the Go bindings in `kodexa-document/lib/go/pkg/scripting/`:
 #### ⚠️ Critical gotcha — taxon paths are always FULL paths
 
 The Go bindings validate every path argument against the document's
-taxonomies by **exact match on the taxon's `Path` field**
-(`Taxonomy.FindTaxonByPath` in `kodexa-document/lib/go/internal/domain/document/taxonomy.go`).
+taxonomies by **exact match on the taxon's `Path` field**.
 The taxon's `Path` is the full slash-separated hierarchy, e.g.
 `Invoice/line_items`.
 
@@ -214,10 +213,10 @@ This means:
 // ❌ WRONG — validator looks for a taxon with Path == "line_items"
 // (does not exist) and panics:
 //   GoError: taxon path "line_items" does not exist in taxonomy "..."
-const bm = bs.getOrCreateChild('line_items');
+const li = inv.getOrCreateChild('line_items');
 
 // ✅ RIGHT — full path matches Invoice/line_items in the taxonomy
-const bm = bs.getOrCreateChild('Invoice/line_items');
+const li = inv.getOrCreateChild('Invoice/line_items');
 ```
 
 The same rule applies to `doc.getOrCreate('Invoice')`,
@@ -229,7 +228,7 @@ path with the attribute name internally, so they take a bare attribute
 name:
 
 ```js
-bm.setAttribute('status', 'MATCHED');
+li.setAttribute('status', 'VERIFIED');
 // validator checks parent.path + "/" + name
 //   = "Invoice/line_items" + "/" + "status"
 //   = "Invoice/line_items/status"  ✓
