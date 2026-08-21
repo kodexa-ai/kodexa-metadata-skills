@@ -1,325 +1,200 @@
 ---
 name: data-form
-description: "Use when creating or editing Kodexa Data Forms V2 — schema-driven JSON/YAML defining UI components for viewing and editing extracted document data, including UINode trees, data binding, QuickJS scripting, Bridge API, and event handling"
+description: "Use when creating or editing a Kodexa data form — the schema-driven review panel that shows and corrects extracted document data. Covers the V2 `nodes` tree and its `v2:*` components, legacy V1 `cards`, `tagPath` binding, `entrypoints`, form scripts and the bridge, keyboard shortcuts and declarative tab order."
 ---
 
-# Kodexa Data Form V2 Authoring
+# Kodexa data forms
 
-## Overview
+A data form is an org-scoped resource describing the panel a reviewer works in
+beside a document: which extracted fields appear, in what layout, which are
+editable, and which exceptions surface. Author it as YAML in
+`data-forms/<slug>.yaml` and apply it with `kdx sync push`.
 
-Data Forms V2 define the UI for viewing and editing extracted document data. They use a component tree (UINode) model with data binding, scripting via QuickJS sandbox, and a Bridge API for interacting with platform services. Forms are defined in JSON and rendered dynamically in the workspace.
+## Which schema am I in?
 
-## When to Use
+Two renderers ship side by side. **The array you use picks the renderer:**
 
-- Creating a data form for viewing/editing extracted document data
-- Building custom UI layouts with panels, grids, tabs
-- Adding scripting for dynamic behavior (formatting, validation)
-- Configuring data binding between UI components and taxon data
-- Migrating from V1 card-based forms to V2 schema forms
-
-## Interactive Wizard
-
-1. **Data source** — What taxonomy/data definition does this form display?
-2. **Layout** — What layout? (single panel, tabs, split view, grid-heavy)
-3. **Components** — What UI components? (labels, editors, grids, trees)
-4. **Interactivity** — Any dynamic behavior? (formatting, conditional visibility, computed values)
-5. **Actions** — Any buttons or event handlers needed?
-
-Generate the complete V2 form JSON.
-
-## V2 Top-Level Schema
-
-```json
-{
-  "version": "2",
-  "nodes": [],
-  "scripts": {},
-  "scriptModules": {},
-  "bridge": {
-    "permissions": ["data:read", "data:write", "navigation", "formState"],
-    "apiBaseUrl": "/api",
-    "maxExecutionMs": 2000
-  }
-}
-```
-
-| Field | Purpose |
-|-------|---------|
-| `version` | Must be `"2"` |
-| `nodes` | Array of root UINode components |
-| `scripts` | Named inline functions: `"name": "function(ctx) { ... }"` |
-| `scriptModules` | Named modules with metadata: source, description, inputs, returns, debounce |
-| `bridge` | Bridge API configuration: permissions, base URL, timeout |
-
-## UINode Schema
-
-```json
-{
-  "component": "card:cardPanel",
-  "props": { "title": "Section Title" },
-  "bindings": { "subtitle": "ctx.dataObjects?.length + ' items'" },
-  "computed": { "backgroundColor": "deriveColor" },
-  "events": {
-    "click": { "type": "script", "target": "kodexa.log.debug('clicked')" }
-  },
-  "children": [],
-  "slots": { "tab-1": [] },
-  "if": "ctx.dataObjects?.length > 0",
-  "show": "ctx.$item?.status !== 'archived'",
-  "for": {
-    "source": "ctx.dataObjects",
-    "itemAs": "$item",
-    "indexAs": "$index",
-    "key": "$item.uuid"
-  },
-  "key": "unique-key",
-  "class": "mt-4",
-  "style": { "backgroundColor": "#ffffff" },
-  "ref": "panelRef",
-  "meta": {
-    "label": "Panel Description",
-    "category": "layout"
-  }
-}
-```
-
-## Component Registry
-
-### Layout Components
-
-| Component | Purpose | Key Props |
-|-----------|---------|-----------|
-| `card:cardPanel` | Container panel | `title`, `groupTaxon`, `collapsible` |
-| `card:cardGroup` | Group of panels | `columns`, `gap` |
-| `card:tabs` | Tabbed interface | `tabs` array |
-| `card:horizontalLine` | Divider | `color`, `thickness` |
-
-### Display Components
-
-| Component | Purpose | Key Props |
-|-----------|---------|-----------|
-| `card:label` | Text display | `text`, `variant` |
-| `card:singleTaxon` | Single taxon value | `taxon` path |
-
-### Data Components
-
-| Component | Purpose | Key Props |
-|-----------|---------|-----------|
-| `card:dataAttributeEditor` | Edit a data attribute | `taxon` path |
-| `card:grid` | Data grid/table | `columns`, `dataSource` |
-| `card:taxonGrid` | Taxon-based grid | `groupTaxon`, `columns` |
-| `card:dataStoreGrid` | Store data grid | `storeRef` |
-| `card:transposedGrid` | Transposed view | `groupTaxon` |
-
-### Tree/Navigation Components
-
-| Component | Purpose | Key Props |
-|-----------|---------|-----------|
-| `card:dataObjectsTree` | Data object tree | `rootPath` |
-| `card:taxonTabs` | Tabs per taxon | `groupTaxon` |
-| `card:exceptions` | Validation exceptions | `showResolved` |
-
-## Event Handling
-
-```json
-{
-  "events": {
-    "click": {
-      "type": "script",
-      "target": "kodexa.log.debug('clicked', ctx.$item?.uuid)",
-      "condition": "ctx.$item?.status !== 'locked'",
-      "debounce": 300
-    },
-    "change": {
-      "type": "scriptRef",
-      "target": "validateField",
-      "params": { "fieldName": "invoice_number" }
-    },
-    "submit": {
-      "type": "emit",
-      "target": "form-submitted"
-    }
-  }
-}
-```
-
-Event types: `script` (inline JS), `scriptRef` (named script), `emit` (bubble to parent).
-
-## Bridge API
-
-### kodexa.data (requires `data:read` or `data:write`)
-
-```javascript
-kodexa.data.getDataObjects(filter)             // Get data objects
-kodexa.data.getDataObject(uuid)                // Get single object
-kodexa.data.getAttributes(uuid)                // Get attributes
-kodexa.data.getAttribute(uuid, path)           // Get single attribute
-kodexa.data.setAttribute(uuid, path, v)        // Set attribute value
-kodexa.data.deleteAttribute(uuid, path, opts?) // Delete attribute (see options below)
-kodexa.data.addDataObject(parentUuid, p)       // Add child object
-kodexa.data.deleteDataObject(uuid)             // Delete object
-kodexa.data.getTaxonomies()                    // Get available taxonomies
-```
-
-**`deleteAttribute(uuid, path, options?)` options:**
-
-| Option | Default | Behavior |
+| Your YAML has | Renderer | Component names |
 |---|---|---|
-| `autoDeleteEmptyParent` | `false` | When `true`, the parent data object is deleted if removing this attribute leaves it empty. Used by transposed grid cells. Default does **not** cascade — the parent stays as an empty shell. |
+| `nodes: [...]` | V2 schema renderer | `v2:panel`, `v2:attributeEditor`, … |
+| `cards: [...]` | V1 card renderer | `cardPanel`, `dataAttributeEditor`, … (bare, no prefix) |
 
-```javascript
-// Default: parent stays even if empty
-kodexa.data.deleteAttribute(rowUuid, "amount");
+Detection is `version == "2"` **OR** a non-empty `nodes` array. So:
 
-// Cascade: parent is removed too if it's now empty
-kodexa.data.deleteAttribute(rowUuid, "amount", { autoDeleteEmptyParent: true });
+- `version` is the form's own domain version string, not the schema selector.
+  A form with `version: 1.0.0` and a `nodes` array renders as V2 — that is the
+  common shape in the wild.
+- **Setting `version: "2"` on a `cards` form blanks it.** Detection flips to V2,
+  V2 reads `nodes` (empty), and the form renders nothing. No error.
+- V1 forms get **no** `scripts`, `shortcuts`, `scriptTriggers`, `eventTriggers`
+  or `tabOrder` — those are only handed to the V2 renderer. Adding them to a
+  `cards` form is silently ignored.
+
+Author new forms as V2. Edit existing V1 forms in place — see
+`references/v1-legacy.md`.
+
+## The record
+
+```yaml
+type: dataForm                 # resource discriminator; stored as "data-form"
+slug: invoice-review           # identity; derived from `name` if you omit it
+name: Invoice Review
+description: Review extracted invoice data
+version: "2"
+publicAccess: false
+deprecated: false
+template: false
+editable: true                 # persisted, but nothing reads it (see below)
+entrypoints:
+  - documentFamily
+nodes:
+  - component: v2:panel
+    props:
+      title: Invoice
+      groupTaxon: invoice
+    children:
+      - component: v2:attributeEditor
+        props:
+          tagPath: invoice/invoice_number
+          label: Invoice Number
 ```
 
-### Exception Aggregation
+`entrypoints` is the field authors most often leave off, and it changes where
+the form is reachable and how much data it sees. Only two values are read:
 
-The `card:exceptions` component (and any helper that calls `getUniqueExceptions(...)`) now walks **both** data-object-level exceptions and attribute-level exceptions. This means exceptions migrated to attributes when a user interacts with a field will continue to surface in the panel. The helper `isAutoResolved()` distinguishes platform-generated closing comments from user overrides — useful when filtering "what did the user actually resolve?" vs. auto-cleared platform records.
+| Value | Effect |
+|---|---|
+| `documentFamily` | Listed in the document viewer's "open form" menu. In a task, one form view per document, scoped to that document's data objects. |
+| `workspace` | One form view spanning every document in the task; data objects are **not** scoped to a single document. |
 
-### kodexa.navigation (requires `navigation`)
+Anything else (`task` appears in shipped forms) round-trips but no code branches
+on it. **Always set at least one.** An empty `entrypoints` is omitted from the
+API response entirely, and one surface reads the array without a null guard — so
+such a form can break the document viewer's form menu for the whole project.
 
-```javascript
-kodexa.navigation.focusAttribute(uuid, path)  // Focus on attribute
-kodexa.navigation.scrollToNode(ref)            // Scroll to component
-kodexa.navigation.switchView(viewName)         // Switch workspace view
+## Scope and shipping
+
+Data forms are **org-scoped**: `kdxa_data_forms`, `/api/data-forms`, resolved as
+`data-form://<orgSlug>/<slug>`. A saved form is invisible in a project until
+bound there (manifest `projects.<slug>.linked['data-form']`, or Project Settings
+→ Resources). A task template's `dataFormRef` is a plain `<orgSlug>/<slug>` ref.
+
+## The V2 node
+
+```yaml
+- component: v2:attributeEditor      # required, always `v2:`-prefixed
+  props:                             # static props, passed straight through
+    tagPath: invoice/total_amount
+    label: Total
+  bindings:                          # JS expressions over `ctx`, evaluated per render
+    readonly: ctx.dataObjects?.length > 1
+  if: ctx.dataObjects?.length > 0    # JS expression; false ⇒ node not mounted
+  key: total                         # v-for key when siblings reorder
+  children: []                       # only meaningful on container components
 ```
 
-### kodexa.form (requires `formState`)
+Rules that fail silently when broken:
 
-```javascript
-kodexa.form.get(key)                     // Get form state
-kodexa.form.set(key, value)              // Set form state
-kodexa.form.getNodeRef(ref)              // Get component reference
-```
+- **`tagPath`, not `taxon`.** `taxon` is the V1 property name. A `v2:*` node
+  with `props.taxon` leaves `tagPath` undefined and the editor throws while
+  computing its label — the node renders nothing.
+- **Only five components accept `children`:** `v2:panel`, `v2:tabs`, `v2:row`,
+  `v2:col`, `v2:serviceBridgeView`. Children nested under any other component
+  are dropped without a warning.
+- **`bindings` win over `props`** on a key collision. A binding whose expression
+  throws yields `undefined` — it does *not* fall back to the static prop.
+- **Never put a `card:`-prefixed component under `nodes`.** It resolves to a V1
+  card, which needs a `card` object and `viewId` the V2 renderer never supplies.
+- Repetition comes from components, not from a loop directive: `v2:panel` with
+  `groupTaxon` repeats its children per data object; `v2:grid` / `v2:table`
+  render one row each.
 
-### kodexa.http (requires `http:get` or `http:post`)
+Node fields: `references/v2-schema.md`. All 26 components: `references/v2-components.md`.
 
-```javascript
-kodexa.http.get(path)                    // GET request
-kodexa.http.post(path, body)             // POST request
-```
+## Scripts
 
-> **Activity API note (2026-05-02).** The runtime field formerly known as `Activity.status` is now `Activity.lifecycleState`. If a script reads or filters activities via `kodexa.http.get('/api/activities/...')`, use `lifecycleState` (not `status`).
+Most forms have no `scripts` and no `bridge` block, and are better for it. When
+you do need one, four facts matter more than the API surface:
 
-### kodexa.log (no permission needed)
+- **Form scripts are plain browser JavaScript.** They are compiled with
+  `new Function` on the main thread. There is no sandbox, no isolation and no
+  timeout. Trigger scripts additionally get a WebAssembly path with a hard 2s
+  interrupt. Treat form scripts as trusted code.
+- **The bridge is a function parameter, not a global.** Write
+  `(ctx, bridge) => bridge.navigation.rotatePage("right")`. There is no
+  `kodexa.*` object anywhere; referencing one throws, and the runner swallows
+  the throw and returns `undefined` — a silent no-op.
+- **Omitting `bridge.permissions` grants everything.** Permissions are a
+  narrowing list, not an opt-in. Declaring a list that omits a capability makes
+  that call throw, which is likewise swallowed mid-script.
+- **Trigger scripts must be `function (ctx, bridge) { … }`, never arrows.**
+  `scriptTriggers` / `eventTriggers` cross into a WebAssembly VM through a
+  transform that only recognises a `function` expression; an arrow is discarded
+  and the trigger does nothing. Shortcut and event scripts accept either form.
 
-```javascript
-kodexa.log.debug(...args)
-kodexa.log.warn(...args)
-kodexa.log.error(...args)
-```
+Everything else — the real bridge surface, `shortcuts`, `scriptTriggers`,
+`eventTriggers`, tab order — is in `references/scripting.md`.
 
-## Data Context Variables
+## Declared but inert
 
-| Variable | Description |
-|----------|-------------|
-| `ctx.dataObjects` | Array of data objects at current scope |
-| `ctx.tagMetadataMap` | Map of taxonomy path to tag metadata |
-| `ctx.$item` | Current item in `for` loop |
-| `ctx.$index` | Current index in `for` loop |
-| `ctx.$parent` | Parent data context |
-| `ctx.$root` | Root data context |
+These persist, round-trip, and appear in existing forms and in the UI model, but
+**nothing in the platform reads them**. Preserve them when editing a form you
+did not write; do not author new ones.
 
-## Complete Example
+| Field | Note |
+|---|---|
+| `editable` (form level) | No reader anywhere. Read-only fields are set per node via `props.readonly`. |
+| `views[]`, `actions[]` | No renderer behaviour. `views` is stored untouched; `actions` gets a name check only. |
+| `options[]` | Persisted and name-validated; no renderer behaviour. |
+| `scriptModules` | Only `scripts` is executable. A `scriptRef` naming a module fails validation as an unknown script. |
+| `bridge.maxExecutionMs`, `bridge.apiBaseUrl` | Never read. No script timeout is configurable; `apiBaseUrl` is left from a removed HTTP helper. |
+| node `for`, `ctx.$item`/`$index`/`$parent`/`$root` | The loop directive is not implemented; the node renders once and those variables are always `undefined`. |
+| node `show` | Not read. CSS visibility comes from `showFormula`. Use `if`. |
+| node `computed`, `slots` | Not read; `slots` is walked once for path collection but never rendered. |
+| node `class`, `style`, `ref` | Not applied. Set them through `props`/`bindings` instead (`props.class` works on `v2:label` and `v2:divider`). |
+| `debounce` on node events and on `scriptTriggers[]` | Read only on `eventTriggers[]` (default 300ms). Everywhere else it is stored and ignored. |
+| event `type: emit`, `type: store-action`, `type: bus-event` | `store-action` and `bus-event` are empty cases. `emit` raises a component event that no mount site listens for. |
+| Component props `v2:table.tagPathPrefix`, `v2:tabs.title`/`.icon`, `v2:exceptions.showResolved`, `v2:taxonNav.colSpan` | Declared and accepted, never acted on. See `references/v2-components.md`. |
+| `copyRules` (form level), node `ifFormula`/`showFormula` | Not in the stored model. The API drops unknown keys silently, so these vanish on save. |
 
-```json
-{
-  "version": "2",
-  "nodes": [
-    {
-      "component": "card:cardPanel",
-      "props": {
-        "title": "Invoice Summary",
-        "groupTaxon": "invoice",
-        "collapsible": true
-      },
-      "children": [
-        {
-          "component": "card:cardGroup",
-          "props": { "columns": 2 },
-          "children": [
-            {
-              "component": "card:dataAttributeEditor",
-              "props": { "taxon": "invoice/invoice_number" }
-            },
-            {
-              "component": "card:dataAttributeEditor",
-              "props": { "taxon": "invoice/invoice_date" }
-            },
-            {
-              "component": "card:dataAttributeEditor",
-              "props": { "taxon": "invoice/vendor/name" }
-            },
-            {
-              "component": "card:dataAttributeEditor",
-              "props": { "taxon": "invoice/total_amount" },
-              "bindings": {
-                "class": "ctx.dataObjects?.[0]?.attributes?.total_amount > 10000 ? 'highlight-warning' : ''"
-              }
-            }
-          ]
-        },
-        {
-          "component": "card:horizontalLine"
-        },
-        {
-          "component": "card:taxonGrid",
-          "props": {
-            "groupTaxon": "invoice/line_items",
-            "columns": [
-              { "field": "description", "header": "Description", "width": 300 },
-              { "field": "quantity", "header": "Qty", "width": 80 },
-              { "field": "unit_price", "header": "Unit Price", "width": 120 },
-              { "field": "line_total", "header": "Total", "width": 120 }
-            ]
-          }
-        },
-        {
-          "component": "card:cardPanel",
-          "props": { "title": "Totals" },
-          "children": [
-            {
-              "component": "card:dataAttributeEditor",
-              "props": { "taxon": "invoice/subtotal" }
-            },
-            {
-              "component": "card:dataAttributeEditor",
-              "props": { "taxon": "invoice/tax_amount" }
-            },
-            {
-              "component": "card:dataAttributeEditor",
-              "props": { "taxon": "invoice/total_amount" }
-            }
-          ]
-        },
-        {
-          "component": "card:exceptions",
-          "props": { "showResolved": false }
-        }
-      ]
-    }
-  ],
-  "scripts": {
-    "formatCurrency": "function(ctx) { return '$' + Number(ctx.value).toFixed(2); }",
-    "highlightOverdue": "function(ctx) { return new Date(ctx.value) < new Date() ? 'overdue' : ''; }"
-  },
-  "bridge": {
-    "permissions": ["data:read", "data:write", "navigation", "formState"],
-    "maxExecutionMs": 2000
-  }
-}
-```
+## Server-side validation
 
-## Common Mistakes
+Four structural rules run on create and update. Depending on configuration they
+are disabled, logged, or returned as a 400:
 
-| Mistake | Fix |
-|---------|-----|
-| Missing `version: "2"` | Required to use V2 schema |
-| Bridge permissions not declared | Scripts fail silently without required permissions |
-| Wrong taxon path in `props.taxon` | Must match taxonomy hierarchy: `group/field` |
-| `if` vs `show` confusion | `if` removes from DOM; `show` hides with CSS |
-| Missing `key` in `for` loops | Always provide unique key for list rendering |
-| Script exceeding `maxExecutionMs` | Optimize or increase timeout in bridge config |
+- `data-form.option.name-required` — every `options[]` entry needs a `name`.
+- `data-form.option.name-unique` — `options[].name` must be unique.
+- `data-form.action.name-required` — every `actions[]` entry needs a `name`.
+- `data-form.script-ref-unknown` — **the one you will hit**: when the form
+  declares any inline `scripts`, every `scriptTriggers[].script`,
+  `eventTriggers[].script` and `shortcuts[].scriptRef` must name a key in
+  `scripts`. Skipped entirely when `scripts` is absent or empty.
+
+## Common mistakes
+
+| Mistake | What happens |
+|---|---|
+| `card:*` components under `nodes` | Resolves to a V1 card with no `card`/`viewId` → broken or empty render |
+| `props.taxon` on a `v2:*` node | `tagPath` undefined → editor throws, node disappears |
+| `kodexa.data...` inside a script | `ReferenceError`, swallowed → silent no-op. Use the `bridge` parameter |
+| Calling the bridge from an inline `type: script` handler | Only `ctx` is in scope there. Use a named script via `type: scriptRef` |
+| Assuming an omitted `bridge.permissions` locks things down | It grants every capability |
+| No `entrypoints` | Saves fine, then appears on no surface — and can break the viewer's form menu outright |
+| Both `tabOrder` and `tabOrderGroups` | Mutually exclusive; `tabOrderGroups` wins and `tabOrder` is discarded |
+| `version: "2"` on a `cards` form | Renders blank |
+| Reading `ctx.dataObjects` in a `shortcuts` script | A shortcut's `ctx` is only `{shortcut}` — reach data through `bridge` |
+
+## References
+
+- `references/v2-components.md` — all 26 `v2:*` components with verified props
+- `references/v2-schema.md` — node fields, data context, precedence, conditions
+- `references/scripting.md` — runtimes, bridge surface, triggers, shortcuts, tab order
+- `references/v1-legacy.md` — the `cards` schema and the 22 card types
+- `references/examples.md` — complete, applyable form YAML
+
+## Related skills
+
+`data-definition` owns the taxon paths `tagPath` / `groupTaxon` must match (and
+the conditional formats that colour panels and nav chips). `service-bridge` owns
+`v2:serviceBridgeView.bridgeRef`. `task-template` names forms in
+`forms[].dataFormRef`. `project-template` carries forms inline under `dataForms:`.

@@ -1,264 +1,200 @@
 ---
 name: assistant
-description: "Use when creating or editing Kodexa assistants — YAML configuration for event-driven processing pipelines including step definitions, connections to stores, event subscriptions, conditionals, and module orchestration"
+description: "Use when creating, editing or reviewing a Kodexa assistant — the project-scoped record that holds options.pipeline steps, taxonomy refs and agent config, and that supplies the identity a project's executions run as. Also read this before wiring anything event-driven or scheduled, because that is authored as an activity-plan plus a trigger, not as an assistant."
 ---
 
 # Kodexa Assistant Authoring
 
-## Overview
+## Status: legacy, still supported, no longer an execution path
 
-Assistants are event-driven processing pipelines in Kodexa. They connect to stores and channels, subscribe to events (new documents, status changes), and execute modules in sequence to process documents. Assistants can be reactive (triggered by events), schedulable (run on cron), or both.
+An assistant is a **project-scoped record** (`kdxa_assistants`) holding configuration, and the identity
+a project's executions are attributed to. In current platform versions it does not run anything itself:
 
-## Assistants vs Activity Plans (post-2026-05-02)
+- `subscription` is stored but no evaluator reads it. Assistants never self-trigger.
+- Nothing reads `options.pipeline` to build an execution. It persists and round-trips faithfully; it is
+  never dispatched.
+- Assistant connections were removed (rows drained, no entity, no endpoint, no project-template field)
+  and the assistant-to-store join table was dropped outright.
+- **Nothing validates an assistant file.** Activity plans, triggers, task templates, data forms and
+  service bridges all have server-side validators; assistants have none, and unknown keys — top level
+  or inside `options` — are dropped by a typed unmarshal that never rejects. A wrong key is a silent
+  no-op, never an error — which is why everything under "Declared but inert" below fails quietly.
 
-The activity refactor introduced `activity-plan` (a graph of orchestrated steps) and `trigger` (event-driven launches of an activity). The two abstractions overlap with assistants — pick the right one:
+If you want work to actually happen, author an `activity-plan` and a `trigger`; both have skills here.
 
-| Use case | Pick |
+## Assistants vs activity plans vs triggers
+
+| What you want | Author this |
 |---|---|
-| Reactive document-processing pipeline (parse → extract → label → write) | **Assistant** (this skill) — designed for streaming document events |
-| Orchestrated workflow with human review, approvals, branches, multi-step gating | **`activity-plan` + `trigger`** (see `activity-plan` and `project-template` skills) |
-| Cron-driven module run (no event chain) | **Scheduled job** in project-template, *or* a `schedulable: true` assistant |
-| Wiring a service-bridge HTTP call into a pipeline | Either: an assistant module that does it, or an `activity-plan` step with `kind: BRIDGE_CALL` |
+| Something to start when an event happens | A **trigger** (`kdxa_triggers`) pointing at an activity plan. The six accepted event kinds are `task_created`, `task_status_changed`, `activity_completed`, `manual`, `document_locked`, `knowledge_set_updated`; filtering is a JSONata `eventFilter`. See the `trigger` skill. |
+| A module to actually run over a document | An **activity-plan** step of `type: EXECUTION` — the only path that builds a runnable pipeline |
+| Branching, tasks, approvals, scripts, a service-bridge HTTP call | An **activity-plan**. The step discriminator key is `type:` (not `kind:`); accepted values are `EXECUTION`, `BRIDGE_CALL`, `CREATE_TASK`, `SCRIPT`, `APPROVAL`, `LLM`, `AI_PROMPT`, `AGENT` |
+| Cron / periodic work | Not available in-platform. `schedule` is rejected as a trigger event kind and there is no scheduled-jobs API. Drive it from outside. |
+| A named project-scoped record that *declares* taxonomy refs, a module pipeline or agent config — configuration that persists but does not run | An **assistant** (this skill) |
+| An identity for plan-run executions | The auto-provisioned system Task Assistant — never author one |
+| To read runtime state | The rows are `Activity` (`kdxa_activities`) and `Step` (`kdxa_steps`); an activity's runtime field is `lifecycleState`, not `status` |
 
-In short: assistants are the right choice for *document-event-driven pipelines* (the platform's bread and butter); activity-plans are the right choice for *human-in-the-loop workflows and explicit step graphs*. They can coexist — an assistant can process a document, and the resulting task can fire a `trigger` that starts an `activity-plan`.
+## Where the file lives
 
-> **Terminology note.** Where this skill (or older code) refers to "plans" or "planned items" produced by an assistant, the platform now persists those as `Activity` and `Step` rows. The runtime field formerly known as `Activity.status` is now `Activity.lifecycleState`. Subscription expressions that filter on activity-related events should use the new field name.
-
-## When to Use
-
-- Creating a new assistant for document processing
-- Configuring event subscriptions and store connections
-- Setting up multi-step processing pipelines
-- Adding conditional logic to processing flows
-- Debugging assistant event handling or execution issues
-
-## Interactive Wizard
-
-1. **Purpose** — What does the assistant do? (extraction, classification, validation, transformation, routing)
-2. **Trigger** — What triggers it? (new document uploaded, status change, schedule, manual)
-3. **Stores** — Which stores does it read from / write to?
-4. **Steps** — What processing steps? (which modules, in what order)
-5. **Conditions** — Any conditional logic? (skip if already processed, route by type)
-6. **Error handling** — What happens on failure? (retry, move to exceptions, notify)
-
-Generate the assistant YAML configuration.
-
-## Extension Pack Assistant Definition
+`<metadata_dir>/projects/<projectSlug>/assistants/<slug>.yaml`, pushed with `kdx sync push`. Assistants
+are project-scoped, so `kdx` reads and writes them under `projects/<projectSlug>/`, never flat.
 
 ```yaml
-name: "My Assistant"
-slug: my-assistant
-description: "What this assistant does"
-type: assistant
-reactive: true                         # Triggered by events
-schedulable: false                     # Can run on schedule
-publicAccess: true                     # Available to all orgs
-template: true                         # Is a template
-
-A:
-  package: my_package                  # Python package name
-  class: MyAssistant                   # Python class name
-
-options:                               # User-configurable options
-  - name: confidence_threshold
-    label: "Confidence Threshold"
-    type: number
-    default: 0.85
-    required: false
-    description: "Minimum confidence for auto-processing"
+# .../projects/invoice-processing/assistants/invoice-extractor.yaml
+slug: invoice-extractor          # ^[a-zA-Z0-9_-]+$, max 255
+name: Invoice Extractor          # required; also the soft-delete unique column
+description: Parses and extracts invoice data
+active: true                     # nullable bool, defaults true when omitted
+assistantRole: extractor         # free text — 'TASK' is RESERVED, see below
+chatEnabled: true
+showInTraining: true
+runOnExistingContent: true
+priorityHint: 0
+color: "#4F46E5"                 # max 25 chars
+options:
+  taxonomies: [acme-corp/invoice-data]
+  pipeline:
+    steps:
+      - ref: kodexa/fast-pdf-model     # module://, model://, model-runtime:// or bare org/slug
+        name: Parse PDF                # `ref` is the only required key on a step
+        stepType: MODULE               # see below
+        options:                       # module options belong HERE, not on the assistant
+          min_words_per_page: 10
+      - ref: kodexa/llm-taxonomy-model
+        name: Extract fields
+        stepType: MODULE
+        options:
+          taxonomy: acme-corp/invoice-data
+        conditional: "metadata.documentType == 'invoice'"
+        executionPolicy:               # all five keys optional — defaults below
+          timeoutSeconds: 900
+          onExhausted: fail            # fail | skip
+  complete_label: reviewed             # snake_case — the only such key on this resource
 ```
 
-## Project-Level Assistant Configuration
+Two more top-level keys round-trip, after `options`: `testOptions` then `subscription`. Keeping the
+whole file in this key order stops `kdx` reformatting it on the next pull.
 
-When used in a project or project template:
+## Step shape: refs, stepType, conditionals, execution policy
+
+These are the semantics the runtime applies to an execution step of this shape. An assistant's copy is
+stored and never dispatched, so author it correctly — you cannot observe it by firing the assistant.
+
+**Refs are unversioned** — `ref: kodexa/fast-pdf-model:1.0.0` is wrong; a legacy `:version` suffix is
+stripped, and version-suffixed URIs are rejected by the resolver outright. **Module options go on the
+step**, as a sibling of `ref`; that map is the only part of the file where `kdx` rewrites sigils and
+variables on pull/push. **`stepType`** is a free string; `MODULE` is the platform's only defined value
+and the one the runtime emits, while older YAML often carries `MODEL`. Write `MODULE`.
+
+**`conditional`** is a `simpleeval` **Python** expression, not the older filter syntax. Three names are
+in scope, all with dot access: `context` (the execution context), `metadata` (shorthand for
+`context['metadata']`) and `input_event` (the previous step's output). Use Python operators — `and`,
+`or`, `not`, `True`/`False`; there is no `hasMixins()` helper and `AND` is a syntax error. Empty or
+absent means the step runs. Two silent-skip traps: an expression that **errors is treated as false and
+the step is skipped**, and a **name that is not in the payload resolves to `None`** rather than
+raising — so `metadata.documentTyp == 'invoice'` is simply false and the step vanishes with no error.
+
+**`executionPolicy`** keys are all optional; unset ones fall back to `timeoutSeconds: 900`,
+`maxAttempts: 1`, `backoffStrategy: immediate`, `backoffBaseSeconds: 0`, `onExhausted: fail`. `skip`
+lets the rest of the pipeline continue past a failed step. These five are the only failure knobs in
+this shape — there is no "move to exceptions" or "notify" behaviour.
+
+## Assistants inside a project template
+
+A project template can carry an `assistants:` list. Project creation copies exactly `name, slug,
+description, subscription, showInTraining, chatEnabled, assistantRole, priorityHint, options`, and
+forces `active` true. Two traps:
+
+**Flat `options` are destroyed.** A template's `options` is parsed as a free-form map, then re-parsed
+into the typed shape, keeping only `taxonomies`, `pipeline`, `complete_label`, `prompt`, `moduleRefs`,
+`agentRuntimeId`. Anything else is gone before the row is written and cannot come back.
 
 ```yaml
-assistants:
-  - name: "Document Processor"
-    slug: doc-processor
-    description: "Processes incoming documents"
+options:                     # WRONG — the key silently vanishes
+  min_words_per_page: 10
 
-    # Module reference
-    assistantDefinitionRef: kodexa/pdf-extractor
-
-    # Execution settings
-    priorityHint: 10                   # Higher = more priority
-    loggingEnabled: true               # Detailed execution logs
-    chatEnabled: false                 # Enable chat interface
-    assistantRole: "extractor"         # Role identifier
-
-    # Store access
-    stores:
-      - "${orgSlug}/${project.id}-intake"
-      - "${orgSlug}/${project.id}-output"
-
-    # Event connections
-    connections:
-      - sourceType: STORE
-        sourceRef: "${orgSlug}/${project.id}-intake"
-        subscription: "!hasMixins('processed')"
-
-    # Module options
-    options:
-      use_ocr: true
-      confidence_threshold: 0.85
-
-    # Optional scheduling
-    schedules:
-      - cronExpression: "0 0 8 * * *"  # 8 AM daily
+options:                     # RIGHT
+  pipeline:
+    steps:
+      - ref: kodexa/fast-pdf-model
+        stepType: MODULE
+        options: { min_words_per_page: 10 }
 ```
 
-## Connection Types
+**Booleans invert their default inside a template.** On the standalone resource `showInTraining`,
+`chatEnabled`, `active` and `runOnExistingContent` are nullable and default to **true** when omitted;
+in a template `showInTraining` and `chatEnabled` are plain booleans wrapped unconditionally, so
+**omitting them persists `false`**. Write every boolean you care about explicitly in template YAML.
+(`runOnExistingContent` and `color` have no template field at all.)
 
-```yaml
-connections:
-  # Store connection - triggered when documents arrive or change
-  - sourceType: STORE
-    sourceRef: "${orgSlug}/${project.id}-documents"
-    subscription: "!hasMixins('processed')"
+`${assistant.<Name>.id}` is keyed on the assistant's **name** (spaces included), not its slug, and is
+registered only as each assistant is created — late in project creation. So only assistants further
+down the same `assistants:` list can use it; anything earlier gets the literal string back. The
+variables seeded up front are `${project.id}`, `${project.name}`, `${orgSlug}` and its alias `${org}`.
 
-  # Channel connection - triggered by upstream assistant output
-  - sourceType: CHANNEL
-    targetRef: "${orgSlug}/${project.id}/upstream-assistant"
-    subscription: "status == 'completed'"
+## Referencing one, and the reserved system assistant
 
-  # Document family connection
-  - sourceType: DOCUMENT_FAMILY
-    sourceRef: "${orgSlug}/${project.id}-store"
+`assistant://<orgSlug>/<projectSlug>/<assistantSlug>` — **three** segments. A two-segment
+`assistant://acme-corp/invoice-extractor` is rejected with "project slug required". Version-suffixed
+URIs are rejected outright, and soft-deleted assistants are excluded from resolution.
 
-  # Workspace connection
-  - sourceType: WORKSPACE
-    sourceRef: "${orgSlug}/${project.id}/workspace-slug"
-```
+`assistantRole` is free text with one reserved value: **`TASK`**. Every project gets an
+auto-provisioned system assistant — name `Task Assistant`, slug `task-assistant`, role `TASK` — created
+with the project and re-created if missing when an activity is materialized. Activity-plan `EXECUTION`
+steps are attributed to it, and it backs the assistant-type platform user and scoped token used to
+dispatch step work. Never author that slug or that role; you will collide with it.
 
-### ConnectableType Values
+## What actually executes
 
-| Type | Trigger | Use Case |
-|------|---------|----------|
-| `STORE` | Document added/changed in store | Primary input processing |
-| `CHANNEL` | Upstream assistant completes | Pipeline chaining |
-| `DOCUMENT_FAMILY` | Document family events | Fine-grained document processing |
-| `WORKSPACE` | Workspace events | User-initiated processing |
+Executions get their pipeline from an activity-plan `EXECUTION` step, which builds a single-`MODULE`
+pipeline attributed to the Task Assistant. Your assistant's `options.pipeline` is not consulted.
 
-## Subscription Expressions
+`POST /api/projects/{id}/assistants/{assistantId}/events` and
+`PUT /api/projects/{id}/assistants/{assistantId}/schedule` both create an execution with **no
+pipeline**, which the scheduler immediately marks `FAILED`. Firing an assistant from the UI or the API
+produces a failed execution, not a run — current behaviour, not a bug in your YAML.
 
-Filter which events trigger the assistant:
+`kdx` writes through `/api/assistants` and `/api/assistants/{id}`; the activate, deactivate, events,
+executions and schedule routes hang off `/api/projects/{id}/assistants/...`. Permissions are
+`assistant:` `read` / `create` / `update` / `delete` / `activate` / `deactivate` / `trigger`, plus
+`execution:read` to list executions. Deletes are soft — the row stays with `deleted = true` and a
+mangled `name`, and the resolver skips it. A stale `changeSequence` on update is rejected with 409;
+omitting the key opts out of the check.
 
-```yaml
-# Process only unprocessed documents
-subscription: "!hasMixins('processed')"
+## Declared but inert
 
-# Process only PDFs
-subscription: "contentType == 'application/pdf'"
+**Parsed and discarded — never persisted.** These still appear in older YAML and in the key order
+`kdx` writes back, so they look endorsed. They are not.
 
-# Process documents with specific status
-subscription: "status == 'new'"
+| Key | What happens |
+|---|---|
+| `connections:` | Removed. No entity, no endpoint, no template field; the backing rows were deleted. Migrate to an activity-plan plus a trigger. |
+| `stores:` | Removed. The backing table was dropped; the store-list endpoint is in the spec but has no route and 404s. Scope stores with project-resource bindings and step options instead. |
+| `schedules:` / `schedulable:` | Removed. No column, no scheduled-jobs API, and `schedule` is not a valid trigger event kind. |
+| `assistantDefinitionRef:` | Parses, never copied onto the created assistant. There is no assistant-definition entity or endpoint. |
+| `loggingEnabled:` / `deleteLoggingOnSuccess:` / `definition:` | Columns dropped or never existed on the model. Silent no-op. |
+| `options.properties:`, `options.data_store:`, `options.write_back_to_store:`, any other flat `options` key | Not one of the six typed `options` keys, so dropped on write. Common in older templates. `kdx` even rewrites sigils inside `options.properties` on pull/push — that is formatting, not support. |
+| `reactive:` / `publicAccess:` / `template:` / `type:` | Belong to org-scoped metadata resources. An assistant is not one — it has no organization, no public-access flag and no type. |
 
-# Combine conditions
-subscription: "!hasMixins('processed') AND contentType == 'application/pdf'"
+**Persisted and round-tripped, but nothing reads them.**
 
-# Process completed upstream results
-subscription: "status == 'completed'"
-```
+| Key | Note |
+|---|---|
+| `subscription` | No evaluator anywhere. Does not cause the assistant to fire. |
+| `options.pipeline` / `options.taxonomies` / `options.complete_label` | Stored intact; no code path reads them to run or label anything. |
+| `options.prompt` / `options.moduleRefs` / `options.agentRuntimeId` | Agent configuration in waiting; the live agent path takes its prompt and module refs from channel types, not from here. |
+| `priorityHint` | Never mapped onto execution priority. If it is ever wired, note that scheduling orders priority **ascending** — lower is more urgent, the opposite of "higher wins". |
+| `chatEnabled` / `runOnExistingContent` | No reader in the backend or the UI. |
+| `showInTraining` / `color` / `testOptions` | UI-only: they filter the workspace assistants panel, colour a swatch, and supply options to the events endpoint whose executions fail as described above. |
 
-## Multi-Step Pipelines
+## Common mistakes
 
-Chain assistants together using channels:
-
-```yaml
-assistants:
-  # Step 1: OCR/Parsing
-  - name: Document Parser
-    slug: parser
-    assistantDefinitionRef: kodexa/pdf-parser
-    connections:
-      - sourceType: STORE
-        sourceRef: "${orgSlug}/${project.id}-intake"
-        subscription: "!hasMixins('parsed')"
-
-  # Step 2: Extraction (triggered by parser completion)
-  - name: Data Extractor
-    slug: extractor
-    assistantDefinitionRef: kodexa/data-extractor
-    connections:
-      - sourceType: CHANNEL
-        targetRef: "${orgSlug}/${project.id}/parser"
-        subscription: "status == 'completed'"
-
-  # Step 3: Validation (triggered by extractor completion)
-  - name: Data Validator
-    slug: validator
-    assistantDefinitionRef: kodexa/validator
-    connections:
-      - sourceType: CHANNEL
-        targetRef: "${orgSlug}/${project.id}/extractor"
-        subscription: "status == 'completed'"
-```
-
-## Extension Pack Structure
-
-For creating assistant packages:
-
-```yaml
-name: "My Extension Pack"
-slug: my-extension-pack
-type: extensionPack
-description: "Collection of processing assistants"
-source:
-  type: docker
-  location: kodexa://extension-core:{version}
-services:
-  - slug: my-assistant
-    name: "My Assistant"
-    type: assistant
-    assistant:
-      package: my_package
-      class: MyAssistant
-    schedulable: true
-    reactive: true
-    options:
-      - name: option_name
-        label: "Option Label"
-        type: string
-        required: true
-```
-
-## Python Assistant Implementation
-
-```python
-from kodexa import Assistant, PipelineContext
-
-class MyAssistant(Assistant):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.confidence = kwargs.get('confidence_threshold', 0.85)
-
-    def process(self, document, context: PipelineContext):
-        """Main processing method."""
-        # Process the document
-        context.log.info(f"Processing {document.uuid}")
-
-        # Access options
-        use_ocr = context.get_option('use_ocr', True)
-
-        # Update status
-        context.status_reporter.update("Extracting data", status_type="analyzing")
-
-        return document
-
-    def handle_event(self, event, document, context):
-        """Handle platform events (if reactive)."""
-        event_type = event.get('type')
-        return document
-```
-
-## Common Mistakes
-
-| Mistake | Fix |
-|---------|-----|
-| No connections defined | At least one connection needed to trigger processing |
-| Wrong `sourceRef` format | Must be `orgSlug/storeSlug` or use template vars `${orgSlug}/${project.id}-slug` |
-| Channel ref without project context | Channel refs need project: `${orgSlug}/${project.id}/assistant-slug` |
-| Missing stores list | Add all stores the assistant reads from or writes to |
-| Subscription syntax errors | Use `hasMixins('label')` not `hasMixin('label')` |
-| Scheduling without `schedulable: true` | Extension pack definition must set `schedulable: true` |
+| Mistake | What actually happens |
+|---|---|
+| Expecting the assistant to fire on document arrival | Nothing fires. Author an activity-plan plus a trigger. |
+| Module options directly under the assistant's `options:` | Dropped by the typed unmarshal. Put them on `options.pipeline.steps[].options`. |
+| Omitting `showInTraining` / `chatEnabled` in a project template | Persists `false`, not the resource default `true`. |
+| `completeLabel` | The wire key is `complete_label` — snake_case. |
+| `:version` on a step `ref`, or a two-segment `assistant://org/slug` | Versions were stripped platform-wide; assistant URIs need three segments. |
+| `AND` or `hasMixins()` in a `conditional` | It is Python: `and`, `or`, `not`. A bad expression skips the step silently. |
+| A Python `Assistant` subclass with `process()` | Modules are plain functions — the runtime imports `infer()`, falling back to `handle_event()`. See the `module` skill. |

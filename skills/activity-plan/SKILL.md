@@ -1,428 +1,200 @@
 ---
 name: activity-plan
-description: "Use when creating or editing Kodexa activity plans — org-scoped YAML defining a step graph (CREATE_TASK, EXECUTION, BRIDGE_CALL, SCRIPT, LLM, APPROVAL, AGENT) plus inputs schema and default title/description templates. Replaces the old plan_template inside task-templates."
+description: "Use when writing or editing Kodexa ActivityPlan YAML — the org-scoped graph of steps (EXECUTION, CREATE_TASK, SCRIPT, LLM, BRIDGE_CALL, AGENT) that runs as a project Activity. Covers the flat step envelope keyed by `type`, dependsOn and action edges, per-document fan-out and routing (perDocument, ANY_BRANCH, await `?` deps), setDocumentStatus, inputOptions vs inputsSchema, per-field reference formats, and the several template languages that coexist in one plan."
 ---
 
-# Kodexa Activity Plan Authoring
+# Kodexa ActivityPlan authoring
 
-## Overview
+An **ActivityPlan** is an org-scoped directed graph of typed steps; starting one creates a project-scoped **Activity**
+plus a runtime step row per step. Plans live in `kdxa_activity_plans`, resolve as `activity-plan://acme-corp/invoice-intake`
+(unversioned), sync from an `activity-plans/` directory, and must be **bound to a project** before they run.
 
-An **ActivityPlan** is the org-level definition of automated work — a graph of steps, an inputs schema, and default templates for title/description rendering. Activities are *runtime instances* of a plan; the plan itself is metadata, bound to projects via `project_resources`.
-
-Introduced by the **activity refactor (2026-05-02)**. Activity plans replace the inline `planTemplate` that used to live inside task templates. They are first-class resources, syncable via `kdx-cli` (push order 50), and resolvable via `activity-plan://orgSlug/slug`.
-
-## When to Use
-
-- Defining an automated workflow (extraction → review → approval)
-- Migrating an old `task_template.planTemplate` block into its new home
-- Wiring a service-bridge call into an activity (`BRIDGE_CALL` step)
-- Adding a human-in-the-loop step (`CREATE_TASK` with `waitForCompletion`)
-- Defining a multi-step LLM/script pipeline tied to a project
-
-## How Activity Plans Fit Together
-
-```
-┌─────────────────┐     ┌──────────────────┐     ┌───────────────┐
-│   Trigger       │     │   ActivityPlan   │     │  TaskTemplate │
-│  (project)      │ →   │   (org)          │ →   │  (org)        │
-│  eventKind +    │     │  steps[].kind=   │     │  shape of the │
-│  filter         │     │  CREATE_TASK     │     │  human task   │
-└─────────────────┘     └──────────────────┘     └───────────────┘
-   fires on event       runs steps in order      materialized by
-                                                 CREATE_TASK steps
-```
-
-A `Trigger` (project-scoped) listens for an event (`task_created`, `task_status_changed`, `activity_completed`, `manual`), then **starts the referenced ActivityPlan as an Activity**. Each `CREATE_TASK` step in the plan materializes a Task from a TaskTemplate.
-
-## Top-Level Structure
+## Resource shape
 
 ```yaml
-slug: invoice-processing                      # Required — unique within (orgSlug, slug)
-name: "Invoice Processing Workflow"           # Required — display name (from AbstractMetadata)
-organizationId: ${orgSlug}                    # Required
-description: "Extract → review → approve invoices"
-
-inputsSchema:                                 # Optional — JSON-Schema; validated at start time
-  type: object
-  required: [documentId]
-  properties:
-    documentId: { type: string }
-    priority:   { type: string, enum: [low, medium, high] }
-
-defaultTitleTemplate: "Process invoice {{ .inputs.documentId }}"
-defaultDescriptionTemplate: |
-  Automated processing of {{ .inputs.documentId }} (priority: {{ .inputs.priority }})
-
-steps:                                        # Required — ordered graph of step nodes
-  - slug: extract
-    kind: EXECUTION
-    config:
-      moduleRef: "${orgSlug}/invoice-extractor"
-      options: {}
-
-  - slug: review
-    kind: CREATE_TASK
-    dependsOn: [extract]
-    config:
-      taskTemplateRef: invoice-review
-      taskStatusSlug: todo
-      waitForCompletion: true
-
-metadata:                                     # Optional — description, icon, provider, etc.
-  description: "Standard invoice intake → review pipeline"
-  icon: "file-invoice"
+slug: invoice-intake                  # required, unique in the org
+orgSlug: acme-corp                    # `kdx apply -f` needs it (or --org-slug); ${org} also resolves
+name: Invoice Intake
+type: activity-plan                   # routes the file — `kdx apply -f` refuses one without it
+inputOptions:                         # the ONLY server-enforced input contract
+  - { name: vendorId, label: Vendor, type: string, required: true }
+  - { name: priority, label: Priority, type: selection, required: false }
+inputsSchema: { type: object, required: [vendorId], properties: { vendorId: { type: string } } }
+defaultTitleTemplate: "Invoice — {{ filename .documentPath }}"   # Go text/template; the start
+defaultDescriptionTemplate: "{{ .documentCount }} document(s)"   # returns 400 if it fails to render
+steps: [...]
 ```
 
-### Template scope (Go text/template)
+A required `inputOptions` entry missing (or empty) in `inputs` fails the start: `missing required inputs: <names>`.
+`inputsSchema` only renders the Studio start form — never validated server-side — so declare every input in both.
 
-`defaultTitleTemplate` and `defaultDescriptionTemplate` use Go text/template syntax. Context root: `{ inputs, org, project, caller, now }`. Missing keys render as empty strings. No HTML escaping (titles are plain text).
-
-### Inputs schema
-
-`inputsSchema` is JSON-Schema-shaped. Validation runs at activity start time; failures return HTTP 400 with field-level errors.
-
-## Step Shape (Universal)
-
-Every step in `steps` shares the same envelope:
+## The step envelope is FLAT and keyed by `type`
 
 ```yaml
-- slug: "string"                              # Unique within the activity plan
-  kind: "CREATE_TASK | EXECUTION | BRIDGE_CALL | SCRIPT | LLM | APPROVAL | AGENT"
-  conditionExpr: "string"                     # Optional — predicate; step skipped if false
-  badges:                                     # Optional — UI-only
-    - { icon: "...", color: "...", label: "..." }
-  dependsOn: ["other-slug", "other-slug:OUTCOME"]   # Optional
-  config: { ... }                             # Per-kind, see below
+steps:
+  - slug: extract                     # required; unique in plan; ^[a-z0-9][a-z0-9_-]*$
+    type: EXECUTION                   # required — the discriminator is `type`, never `kind`
+    moduleRef: "kodexa/fast-pdf-model"          # kind fields sit at the TOP LEVEL
+    conditionExpr: "inputs.priority = 'high'"   # JSONata; false ⇒ step NOT_TAKEN
+    setDocumentStatus: extracted      # any type; stamps a project document status on completion
+    bypass: false                     # any type; true ⇒ step settles SKIPPED with no work
 ```
 
-**`dependsOn` notes.** Each entry is either a step slug (run after that step succeeds) or `slug:OUTCOME` to gate on a specific action outcome (relevant for `SCRIPT`, `APPROVAL`, `LLM`).
+- `kind:` is **not** an alias — a step without `type` fails the start: `step missing required slug or type`.
+- There is **no `config: {}` wrapper**: it is silently flattened into the step on save (so a later pull
+  looks like a rewrite), and the save-time validator runs *before* that flattening, over the flat keys —
+  so wherever that validator is enabled it reports your wrapped fields as missing.
+- `bypass: true` settles the step **SKIPPED**, never COMPLETED — and SKIPPED is pass-through for **every**
+  dep form, action-qualified ones included, so bypassing a router releases its branches, never strands them.
 
-**`conditionExpr`.** Single string predicate. (Migrated from the old `condition: { expr: "..." }` shape, which is now flattened.)
+## Step types
 
-## Step Kinds
+| `type` | Runs | Key fields |
+|---|---|---|
+| `EXECUTION` | a module over the documents | `moduleRef`, `options`, `perDocument` (**default true**), `maxParallel` (5), `joinPolicy` |
+| `CREATE_TASK` | a Task from an org TaskTemplate; waits for it | `taskTemplateRef`, `taskStatusSlug`, `taskData` |
+| `SCRIPT` | JavaScript in a sandboxed VM (300 s budget) | `scriptBody`, `scriptActions`, `scriptSidecars`, `perDocument` |
+| `LLM` | a prompt via the AI gateway | `promptBody` **or** `promptTemplateRef`, `promptActions`, `outputMapping`, `perDocument` |
+| `BRIDGE_CALL` | an HTTP call to a ServiceBridge endpoint | `serviceBridgeRef`, `endpointName`, `request*` maps XOR `requestScript` |
+| `AGENT` | dispatches an agent runtime | `agentRuntimeRef` (`orgSlug/runtimeSlug`, must be READY), `prompt`, `moduleRefs` |
+| `APPROVAL` | **nothing — see below** | — |
 
-### CREATE_TASK — materialize a Task from a TaskTemplate
+Only these seven are safe. `TASK`, `BRIDGE` and `AI_PLANNER` sit outside the accepted type set and
+materialize with none of their type-specific fields (`AI_PLANNER` settles SKIPPED); `AI_PROMPT` is
+accepted but loses its prompt fields at start; **APPROVAL is not implemented** — the orchestrator settles
+it `SKIPPED` at once, so it never reaches an approver and can never emit an action (use `CREATE_TASK`
+with a review template); and **AGENT** ignores `assistantRef`/`agentInputs`, then fails the step with
+`planned agent <id> has no agent_runtime_id`.
 
-```yaml
-- slug: review
-  kind: CREATE_TASK
-  config:
-    taskTemplateRef: invoice-review           # Required — TaskTemplate slug (org-scoped)
-    taskStatusSlug: todo                      # Optional — defaults to template's initialStatusSlug
-    taskData:                                 # Optional — overrides for the materialized task
-      title: "Review invoice {{ .inputs.documentId }}"
-      description: ""
-      priority: 2
-      properties: {}
-    waitForCompletion: true                   # Optional — default true; step blocks until task reaches a terminal status
-```
+## Reference formats differ per field
 
-### EXECUTION — run a module
+| Field | Form | If you get it wrong |
+|---|---|---|
+| `moduleRef` (EXECUTION) | `orgSlug/moduleSlug`, or `module://orgSlug/moduleSlug` | module not found |
+| `scriptSidecars[]` | `orgSlug/moduleSlug` **required**, no `:version` | `must be 'orgSlug/moduleSlug'` |
+| `agentRuntimeRef` | `orgSlug/runtimeSlug` **required** | `expected 'orgSlug/runtimeSlug'` |
+| `serviceBridgeRef`, `enrichment[].serviceBridgeRef` | bare slug; an `orgSlug/` prefix is stripped | — |
+| `taskTemplateRef`, `taskStatusSlug`, `setDocumentStatus` | bare slug, resolved in the plan's org | silently unresolved — an unknown `taskStatusSlug` leaves the task with **no status at all** (there is no fallback) |
+| `promptTemplateRef` | **bare slug — an `orgSlug/` prefix never resolves** | `prompt "acme-corp/x" not found` |
 
-```yaml
-- slug: extract
-  kind: EXECUTION
-  config:
-    moduleRef: "${orgSlug}/invoice-extractor" # Required — module URI or slug
-    options:                                  # Optional — module-specific config
-      confidence_threshold: 0.85
-    bypass: false                             # Optional — skip execution and mark COMPLETED
-    perDocument: true                         # Optional — iterate over the activity's document family
-    maxParallel: 4                            # Optional — parallelism cap when perDocument=true
-    joinPolicy: all_complete                  # Optional — all_complete | any_complete
-```
+`${orgSlug}` is expanded when the plan is **saved**, inside `steps`, `metadata`, `inputOptions`, `inputsSchema`,
+`documentFamilyGroups` and the two templates — so `moduleRef: "${orgSlug}/helpers"` works while
+`promptTemplateRef: "${orgSlug}/…"` does not. `${org}/` is a different placeholder, expanded by `kdx` at push.
 
-### BRIDGE_CALL — call a service bridge HTTP endpoint
+## Dependency and action edges
 
-```yaml
-- slug: post-to-erp
-  kind: BRIDGE_CALL
-  config:
-    serviceBridgeRef: "${orgSlug}/erp-bridge" # Required
-    endpointName: createInvoice               # Required — named endpoint within the bridge
-    requestBody:                              # JSONata expressions or static body
-      number: "$.inputs.invoiceNumber"
-      amount: "$.context.extracted.total"
-    requestQuery:                             # Optional — query-string template
-      mode: "auto"
-    requestPath:                              # Optional — path-segment substitution
-      vendorId: "$.inputs.vendorId"
-    requestHeaders:                           # Optional
-      X-Idempotency-Key: "$.context.idempotencyKey"
-    requestScript: ""                         # Optional — GoJA preprocessor; mutex with the four request_* maps
-    treatAsError: '$.status >= "400"'         # Optional — JSONata predicate that marks response as error
-    timeoutSeconds: 30
-    disableCache: false
-    bridgeActions:                            # Optional — action descriptors emitted by the call
-      - { uuid: "ok", name: "submitted" }
-```
+| `dependsOn` entry | Ready when the upstream is |
+|---|---|
+| `"slug"` | COMPLETED or SKIPPED |
+| `"slug?"` | also NOT_TAKEN (await). **Requires a `conditionExpr`** unless it is a valid `ANY_BRANCH` join, else the start is rejected (`await-no-condition`) |
+| `"slug:action"` | COMPLETED with that action token — or SKIPPED |
+| `"slug?:action"` | await, plus warned `action-qualifier-on-await-ignored`; the qualifier only means anything on an `ANY_BRANCH` branch dep. Qualify a plain dep or gate with `conditionExpr` instead |
 
-### SCRIPT — execute JavaScript (GoJA)
+Only `SCRIPT`, `LLM`, `BRIDGE_CALL` and `CREATE_TASK` can emit actions — an action edge off an `EXECUTION`,
+`AGENT` or `APPROVAL` step is an error at start (`action-edge-upstream-cannot-emit`). Actions are declared
+`{name, slug}` (`uuid` is the legacy spelling of `slug`; both, differing, is rejected). The **live** source is
+`scriptActions` / `promptActions` / `bridgeActions` — and for `CREATE_TASK`, the **referenced TaskTemplate's own
+actions plus the org's DONE-typed task-status slugs**; the step's inline `actions:` array is a mirror only, and an
+edge matching only it fails the start.
+
+**Every SCRIPT step must declare `scriptActions` and return one of them.** The runtime needs a returned object
+with a non-empty `action` matching one by `slug` (exact) or `name` (case-insensitive); `return {}`, or returning an
+action with nothing declared, fails the step. There is no `action()` function and no `ctx`/`context` global — the
+globals are `inputs`, `families`, `task`, `org`, `documents`, `tasks`, `knowledge`, `loadDocument`, `serviceBridge`, `llm`, `log`.
 
 ```yaml
 - slug: classify
-  kind: SCRIPT
-  config:
-    scriptBody: |                             # Required — JS code
-      const total = context.extracted.total;
-      action(total > 10000 ? 'high' : 'normal');
-    scriptActions:                            # Optional — declared action outcomes
-      - { uuid: "high",   name: "high" }
-      - { uuid: "normal", name: "normal" }
-    scriptSidecars:                           # Optional — module refs whose JS is pre-loaded
-      - "${orgSlug}/script-helpers"
+  type: SCRIPT
+  perDocument: true
+  scriptBody: |
+    return { action: families[0].metadata.docType === 'receipt' ? 'receipt' : 'invoice' };
+  scriptActions: [{ name: Receipt, slug: receipt }, { name: Invoice, slug: invoice }]
 ```
 
-> **Migration note.** Old `planTemplate` items used the key `script:` for the body. The activity-plan canonical key is **`scriptBody:`** — Step A migrations rename automatically; new authoring should use `scriptBody`.
+## Per-document processing, routing and document status
 
-#### Runtime — what's available inside `scriptBody`
+`perDocument: true` fans a step out over the activity's document families. Valid **only** on `EXECUTION`
+(default `true`), `LLM`, `SCRIPT`, `BRIDGE_CALL` (default `false`); anywhere else is an error
+(`per-document-unsupported`). `maxParallel` is **EXECUTION-only** (default 5) — on LLM/SCRIPT/BRIDGE_CALL it
+is an error, because those per-document paths run sequentially.
 
-The script runs in a GoJA (Go-embedded JS) VM with these globals:
+**Routing is auto-detected, never a flag**: it turns on when a `perDocument` step declaring actions is the target
+of an action-qualified dep. Branch with `dependsOn: ["classify:receipt"]` / `["classify:invoice"]`, then re-join on
+a `perDocument` step with `joinPolicy: ANY_BRANCH` whose branch deps are await-only (`["receipt-extract?",
+"invoice-extract?"]`) — plain branch deps AND-combine per document and converge nothing. `joinPolicy` is
+`ALL_SETTLED` (default), `ALL_COMPLETED`, `ANY_COMPLETED` or `ANY_BRANCH`; a document whose action matches no
+edge is NOT_TAKEN on every branch and counted unrouted.
 
-| Symbol                                 | Purpose                                                              |
-|----------------------------------------|----------------------------------------------------------------------|
-| `context`                              | Activity context (`context.extracted`, `context.params`, ...)        |
-| `families`                             | Document families attached to the activity (array)                   |
-| `loadDocument(familyId)` → `Document`  | Materialise a document for navigation/mutation                       |
-| `serviceBridge.call(ref, op, body)`    | Synchronous bridge call. `ref` = `'${org}/<bridge-slug>'`            |
-| `log.info / .warn / .error / .debug`   | Structured logging — surfaces in the run log                         |
-| `action('outcome')`                    | Declare the chosen `scriptActions` outcome (drives `dependsOn`)      |
+`setDocumentStatus: <slug>` works on **any** step type, resolving against the **project's** document statuses
+(`kdxa_project_document_status`, not task statuses): a `perDocument` step stamps the families that COMPLETED
+there, any other step stamps every family in the activity. Best-effort — an unknown slug is logged, never fatal.
+Under routing, `conditionExpr` is evaluated per document and gains a `document` object (`.status` slug-or-null,
+`.statusLabel`, `.locked`, `.labels`, `.path`), so a root step can gate with
+`"$not(document.status in ['reviewed', 'completed'])"`; elsewhere `document.*` is inert.
 
-The `Document` exposes navigation + mutation methods that are thin wrappers
-over the platform's Go document bindings:
+## Template languages — four, in one file
 
-- `doc.findFirstDataObjectByPath(path)` — fetch the first data object whose
-  data path matches.
-- `doc.getOrCreate(path)` — fetch-or-create at a top-level path.
-- `obj.getOrCreateChild(path)` — fetch-or-create a **child data object**.
-- `obj.setAttribute(name, value)` / `obj.addAttribute({...})` — write
-  values.
-- `obj.getFirstAttributeValue(name)` / `obj.getAttributeByName(name)` —
-  read values.
+| Where | Language | Right | Wrong |
+|---|---|---|---|
+| `defaultTitleTemplate`, `defaultDescriptionTemplate` | Go text/template | `{{ .inputs.vendorId }}` | `${inputs.vendorId}` |
+| `conditionExpr`, BRIDGE_CALL `request*` values, `treatAsError`, `promptVariables`, `outputMapping` | JSONata | `"inputs.vendorId"`, literal `"'active'"` | `"$.context.vendorId"`, bare `"active"` |
+| LLM `promptBody` | FString | `Classify {docType}` | `{{ docType }}` |
+| `taskData.title/description/properties`, EXECUTION `options` | fixed `${…}` placeholders only | `"${activity.title}"` | `"{{ .inputs.vendorId }}"` — stays literal |
+| `enrichment[].inputMapping` values | plain dot-paths | `"inputs.vendorId"` | `"$.inputs.vendorId"` — resolves to null |
 
-#### ⚠️ Critical gotcha — taxon paths are always FULL paths
+JSONata roots: `conditionExpr` and BRIDGE_CALL maps see `{orgId, projectId, inputs, documentFamilyId,
+extractedData, steps}`, where upstream output is `steps.<slug>.<key>`; LLM `promptVariables` see
+`{context: {orgId, projectId, inputs}, enrichment, steps}`, so an enrichment result is at `enrichment.<outputKey>`,
+never `context.<outputKey>`. Backtick hyphenated slugs: ``steps.`a-b`.action``. **`steps` holds COMPLETED steps
+only, and in a BRIDGE_CALL `request*` map a path that matches nothing fails the step** (`eval: no results found`) —
+guard the **full** path: `"$exists(steps.review.completedActionUuid) ? steps.review.completedActionUuid : ''"`.
 
-The Go bindings validate every path argument against the document's
-taxonomies by **exact match on the taxon's `Path` field**.
-The taxon's `Path` is the full slash-separated hierarchy, e.g.
-`Invoice/line_items`.
+## Validate, bind, start
 
-This means:
+- `POST /api/activity-plans/validate` with `{steps, organizationId}` returns `{valid, issues:[{stepSlug,
+  code, severity, message}]}`, always 200 — the **same** checks the start enforces, but all of them; every
+  `severity: "error"` means start returns 400. The separate save-time rule set is off unless a deployment
+  enables it, so a clean save proves nothing.
+- The plan must be bound to the project — a `kdxa_project_resources` binding of type `activity-plan` —
+  else `POST /api/activities` returns **400**:
+  `activity-plan "<slug>" is not bound to project <id>; create a project-resource binding first`.
+- Start body: `projectId` + `activityPlanRef` required, plus optional `title`, `inputs`, `triggerKind`
+  (default `MANUAL`), `documentFamilyIds`, `documentFamilyFilter`; success is 201. Also launchable from a
+  Trigger, an intake script returning `{ activityPlan: 'invoice-intake', … }`, or a SCRIPT `nextActivity`.
 
-```js
-// ❌ WRONG — validator looks for a taxon with Path == "line_items"
-// (does not exist) and panics:
-//   GoError: taxon path "line_items" does not exist in taxonomy "..."
-const li = inv.getOrCreateChild('line_items');
+## Declared but inert
 
-// ✅ RIGHT — full path matches Invoice/line_items in the taxonomy
-const li = inv.getOrCreateChild('Invoice/line_items');
-```
+Persisted, round-tripped, present in existing YAML — and read by nothing.
 
-The same rule applies to `doc.getOrCreate('Invoice')`,
-`obj.addChild({path: 'Invoice/charges'})`, and any other
-method that takes a `path` argument.
-
-**Exception — `setAttribute` and `addAttribute`** combine the parent's
-path with the attribute name internally, so they take a bare attribute
-name:
-
-```js
-li.setAttribute('status', 'VERIFIED');
-// validator checks parent.path + "/" + name
-//   = "Invoice/line_items" + "/" + "status"
-//   = "Invoice/line_items/status"  ✓
-```
-
-To debug a `taxon path … does not exist` error:
-
-1. Check the deployed taxonomy actually contains the taxon at the expected
-   path (`kdx run data-definitions list-taxonomies --filter "slug:'...'" -o json | jq '.. | objects | select(.path?)'`).
-2. Confirm the *exact* `path` argument the script passes matches that
-   taxon's `Path` field byte-for-byte.
-3. Don't confuse `name`, `externalName`, `label`, and `path`. Only `path`
-   matters for these helpers — `name` and `externalName` are display
-   concerns.
-
-### LLM — call an LLM with a prompt
-
-```yaml
-- slug: extract-fields
-  kind: LLM
-  config:
-    promptBody: "Extract invoice number and total from the document."   # Either promptBody…
-    promptTemplateRef: "${orgSlug}/invoice-extract-prompt"              # …or promptTemplateRef
-    llmModelName: claude-sonnet-4-6           # Optional — overrides default
-    enrichment:                               # Optional — service-bridge calls run before the prompt
-      - serviceBridgeRef: "${orgSlug}/vendor-lookup"
-        operation: lookupVendor
-        inputMapping: { vendorName: "$.inputs.vendor" }
-        outputKey: vendorRecord
-    includeDocument: true                     # Attach activity's document family content
-    outputMapping:                            # JSONata mapping LLM output → step outputs
-      invoiceNumber: "$.number"
-      amount: "$.total"
-    promptVariables:                          # JSONata expressions providing variables
-      vendor: "$.context.vendorRecord.name"
-    promptActions:                            # Optional — declared action outcomes for outputMapping
-      - { uuid: "ok", name: "extracted" }
-```
-
-> Was named `AI_PROMPT` / `AIPLANNER` in the old plan_template schema. The kind value is now **`LLM`**; migrations remap automatically.
-
-### APPROVAL — human approval gate
-
-```yaml
-- slug: approval
-  kind: APPROVAL
-  config:
-    approverRole: finance-manager             # Required — role slug
-    approvalCriteria:                         # Optional — predicate over the activity context
-      condition: "$.context.extracted.total > 10000"
-```
-
-Outcomes are written to the runtime `approval_outcome` column.
-
-### AGENT — invoke a project-scoped Assistant
-
-> **Provisional.** Column wiring not yet finalized. Verify against the orchestrator's agent-step handler before authoring.
-
-```yaml
-- slug: agent-review
-  kind: AGENT
-  config:
-    assistantRef: "${orgSlug}/review-agent"   # Assistant slug, resolved within the project
-    agentInputs:
-      context: "$.inputs"
-```
-
-## Quick Reference — Step Kinds
-
-| Kind | Required config keys | Common optional keys |
-|---|---|---|
-| `CREATE_TASK` | `taskTemplateRef` | `taskStatusSlug`, `taskData`, `waitForCompletion` |
-| `EXECUTION` | `moduleRef` | `options`, `perDocument`, `maxParallel`, `joinPolicy`, `bypass` |
-| `BRIDGE_CALL` | `serviceBridgeRef`, `endpointName` | `requestBody`, `requestQuery`, `requestPath`, `requestHeaders`, `requestScript`, `treatAsError`, `bridgeActions`, `timeoutSeconds`, `disableCache` |
-| `SCRIPT` | `scriptBody` | `scriptActions`, `scriptSidecars` |
-| `LLM` | `promptBody` *or* `promptTemplateRef` | `llmModelName`, `enrichment`, `includeDocument`, `outputMapping`, `promptVariables`, `promptActions` |
-| `APPROVAL` | `approverRole` | `approvalCriteria` |
-| `AGENT` *(provisional)* | `assistantRef` | `agentInputs` |
-
-### Kind-Value Migration Map (pre- vs post-refactor)
-
-| Old `item_type` | New `kind` |
+| Field | Reality |
 |---|---|
-| `TASK` | `CREATE_TASK` |
-| `EXECUTION` (no `service_bridge_ref`) | `EXECUTION` |
-| `EXECUTION` (with `service_bridge_ref`) | `BRIDGE_CALL` |
-| `BRIDGE_CALL` | `BRIDGE_CALL` |
-| `SCRIPT` | `SCRIPT` |
-| `AI_PROMPT` / `AIPLANNER` | `LLM` |
-| `AGENT` | `AGENT` |
-| `APPROVAL` | `APPROVAL` |
+| `waitForCompletion` (CREATE_TASK) | never read; the step always waits for its task to reach a DONE status |
+| `disableCache` (BRIDGE_CALL) | plumbed to the request then ignored; there is no caching layer |
+| `outputMapping` (BRIDGE_CALL) | accepted in YAML but never carried onto the runtime step, so `bridgeActions` never resolve and action edges off a BRIDGE_CALL never fire. Branch instead with a `conditionExpr` on the downstream steps, reading the always-present `steps.<slug>._statusCode` |
+| `inputsSchema` | drives the Studio start form only |
+| `approverRole`, `approvalCriteria`, all of APPROVAL | the step settles SKIPPED before anyone can act |
+| CREATE_TASK inline `actions:` | folded into `taskData.actions`, never rendered, never routable |
+| `badges[]` without `promote: true` | stays on the step; only promoted badges reach the activity |
+| `joinPolicy` on CREATE_TASK / AGENT / APPROVAL | dropped; behaves as ALL_SETTLED (warned `join-policy-inert`) |
+| `documentSummarizationPrompt`, `documentValidationPrompt` | browser upload flow only; API and intake starts bypass both, and an unreachable model fails open |
+| `maxParallel` on CREATE_TASK / AGENT / APPROVAL | never persisted and never flagged — only EXECUTION reads it (on LLM/SCRIPT/BRIDGE_CALL it is a start-time error) |
 
-## Complete Example
+## Common mistakes
 
-```yaml
-slug: invoice-processing
-name: "Invoice Processing Workflow"
-organizationId: ${orgSlug}
-description: "Extract invoice fields, run rules, optionally route to human review."
-
-inputsSchema:
-  type: object
-  required: [documentId]
-  properties:
-    documentId: { type: string }
-    priority:   { type: string, enum: [low, medium, high] }
-
-defaultTitleTemplate: "Process invoice {{ .inputs.documentId }}"
-defaultDescriptionTemplate: "Automated processing of {{ .inputs.documentId }}"
-
-steps:
-  - slug: extract
-    kind: EXECUTION
-    config:
-      moduleRef: "${orgSlug}/invoice-extractor"
-      options:
-        confidence_threshold: 0.85
-
-  - slug: classify
-    kind: SCRIPT
-    dependsOn: [extract]
-    config:
-      scriptBody: |
-        const total = context.extracted.total;
-        action(total > 10000 ? 'high' : 'normal');
-      scriptActions:
-        - { uuid: "high",   name: "high" }
-        - { uuid: "normal", name: "normal" }
-
-  - slug: post-to-erp
-    kind: BRIDGE_CALL
-    dependsOn: ["classify:normal"]
-    config:
-      serviceBridgeRef: "${orgSlug}/erp-bridge"
-      endpointName: createInvoice
-      requestBody:
-        number: "$.context.extracted.number"
-        amount: "$.context.extracted.total"
-      treatAsError: '$.status >= "400"'
-
-  - slug: review
-    kind: CREATE_TASK
-    dependsOn: ["classify:high"]
-    config:
-      taskTemplateRef: invoice-review
-      taskStatusSlug: todo
-      waitForCompletion: true
-      taskData:
-        title: "High-value invoice — {{ .inputs.documentId }}"
-
-  - slug: post-after-review
-    kind: BRIDGE_CALL
-    dependsOn: [review]
-    config:
-      serviceBridgeRef: "${orgSlug}/erp-bridge"
-      endpointName: createInvoice
-      requestBody:
-        number: "$.context.extracted.number"
-        amount: "$.context.extracted.total"
-
-metadata:
-  description: "Auto-process invoices; route high-value to human review."
-  icon: "file-invoice"
-```
-
-## Launching an ActivityPlan
-
-Activity plans don't run on their own. They are launched by:
-
-1. **A `Trigger`** (project-scoped) firing on a project event — see the `project-template` skill (Triggers section).
-2. **A `CREATE_TASK` step** in another activity plan, when its child task is configured to spawn one.
-3. **A direct API call** to `POST /api/activities` with the plan slug.
-4. **An Intake** YAML returning an `activityPlanId` from its GoJA script (replaces old `taskTemplateId`).
-
-## Project Binding
-
-For an ActivityPlan to be usable in a project, its URI must be bound in `kdxa_project_resources`. Three ways to bind:
-
-- **kdx-cli sync/deploy**: include the plan slug in the project's resource manifest.
-- **Project template**: list the plan in the template's resource refs (when authoring projects from a template).
-- **UI**: bind via the Studio resources panel.
-
-If a project tries to start an ActivityPlan that isn't bound, the orchestrator returns **422 Unprocessable Entity**.
-
-## Common Mistakes
-
-| Mistake | Fix |
+| Mistake | What happens |
 |---|---|
-| Using old kind values (`TASK`, `AI_PROMPT`, `AIPLANNER`) | Use `CREATE_TASK`, `LLM`. |
-| Putting plan steps inside a task-template's `planTemplate:` | Move to a separate `activity-plan` resource and reference via `taskTemplateRef`/`Trigger`. |
-| Using `script:` instead of `scriptBody:` in a SCRIPT step | Authoritative key is `scriptBody`. |
-| `condition: { expr: "..." }` on a step | Flatten to a top-level `conditionExpr: "..."` string. |
-| `dependencies:` on a step | Source key is **`dependsOn`** — `dependencies` is silently ignored. |
-| `EXECUTION` step with `serviceBridgeRef` set | Use `kind: BRIDGE_CALL` instead. EXECUTION is module-only. |
-| Authoring an activity plan directly under a project | Plans are **org-scoped**. Bind to projects via project resources. |
-| Starting an unbound plan in a project | Bind the plan to the project first (UI / template / kdx). The orchestrator returns 422 otherwise. |
-| Forgetting `waitForCompletion` on a `CREATE_TASK` you intend to gate on | Default is `true`, but be explicit when the next step depends on the task's outcome. |
+| `kind: SCRIPT` | start rejected: `step missing required slug or type` |
+| `config: { moduleRef: … }` | flattened away on save; where the save-time validator runs it reports them missing |
+| `action('high')` in `scriptBody` | `ReferenceError` — `return { action: 'high' }` instead |
+| `return {}` from a SCRIPT | step fails: the return needs a non-empty `action` matching a `scriptActions` entry |
+| `ctx.` / `context.` in `scriptBody` | no such global; use `inputs`, `families`, `documents`, `task`, `org` |
+| `treatAsError: '$.status >= "400"'` | always false, so a 500 counts as success; use `$._statusCode >= 300` |
+| unguarded `"steps.x.y"` / `"inputs.optional"` in a `request*` map | step fails `eval: no results found` when the path is absent; wrap in `$exists(…) ? … : …` |
+| `joinPolicy: all_complete` | stored verbatim, then reduced as `ALL_SETTLED` with a warning |
+| `promptTemplateRef: "${orgSlug}/x"` | prompt not found at run time; use the bare slug |
+| `maxParallel` on LLM/SCRIPT/BRIDGE_CALL, `perDocument` on CREATE_TASK/AGENT/APPROVAL | error at start |
+| await dep `slug?` with no `conditionExpr` | error at start (`await-no-condition`) |
+
+See `references/step-types.md` (per-type fields, runtime contexts, limits, plan-level keys),
+`references/validation.md` (every issue code) and `references/examples.md` (complete plans). Related
+skills: `task-template`, `task-status`, `trigger`, `service-bridge`, `prompt-template`, `module`.
