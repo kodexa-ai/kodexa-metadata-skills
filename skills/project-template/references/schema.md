@@ -44,6 +44,13 @@ stores:
   nothing reads — it copies no documents, metadata or configuration. See the inert list in `SKILL.md`.
 - On the `ref:` branch the resolver falls back to the other table if the first lookup misses, so a
   bound store still resolves when `storeType` disagrees with reality.
+- The persisted `DATA` is *not* the spelling the rest of the platform dispatches on. Studio's store
+  card and its own store-create routing both branch on `DOCUMENT` / `TABLE` / `MODEL`, and the CLI's
+  legacy `type: store` remapping knows the same three. `DATA` matches none of them, so a
+  template-created data store draws a card with neither a type label nor its name. Everything about
+  the standalone `document-store` / `data-store` YAML — the flattened wire shape, the inner keys
+  that vanish when written flat, and the binding a store needs before a project can see it — is in
+  the **store** skill.
 
 ## `taxonomies:`
 
@@ -379,7 +386,7 @@ Push order (lower pushes first):
 
 ```
 data-definition / data-form / document-store / data-store / module 20 → activity-plan 50 → intake 55
-→ project-template 58 → project 60 → workspace 63
+→ project-template 58 → project 60 → workspace 63 (registry only — see below)
 → knowledge-set / task-template / task-status 65 → assistant / knowledge-item 70 → trigger 75
 ```
 
@@ -388,5 +395,12 @@ Note that task-templates, task-statuses and knowledge-sets push *after* projects
 cannot materialize a template anyway (`projectTemplateRef` is stripped on project create), so this
 ordering only matters when you create the project yourself once the sync has finished.
 
+The project at 60 is a resource you author and push like any other, with its own file and its own
+traps — `references/project-yaml.md`.
+
 Workspaces are a separate project-scoped resource with their own endpoint; there is no `workspaces:`
-key on a project template and no panel list anywhere in the model.
+key on a project template and no panel list anywhere in the model. The endpoint is still live, but
+**`kdx sync` refuses the `workspace` type against the Go API** — pull and push both log
+`Skipping workspace <slug> - not supported by this server (api_version)`, count it as skipped, and
+finish green. It sits at 63 in the table above only because that is where the registry puts it; a
+`workspace:` entry in a manifest moves nothing.

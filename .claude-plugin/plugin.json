@@ -28,6 +28,12 @@
     "prompt-templates",
     "service-bridges",
     "kdx",
-    "cli"
+    "cli",
+    "stores",
+    "document-stores",
+    "data-stores",
+    "labels",
+    "channel-types",
+    "metadata-envelope"
   ]
 }

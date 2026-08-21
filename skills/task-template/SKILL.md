@@ -110,7 +110,7 @@ nothing at runtime. Do not delete them from files that already have them; do not
 | `initialStatusSlug` (top level) | No reader anywhere. Set the starting status on the activity-plan `CREATE_TASK` step's `taskStatusSlug`, or `statusSlug` in the create request. A task with no status is excluded from take-next entirely. |
 | `metadata.options[]` | The whole option list. Studio's "Options" tab edits `metadata.properties`, not this. No task-runtime renderer exists. |
 | `metadata.executionPolicy` | Editable in Studio; retries/timeouts actually come from the activity-plan step's own `executionPolicy`. |
-| `metadata.workspaceId` | No reader. |
+| `metadata.workspaceId` | No reader. `kdx sync` still templates the UUID as `${workspace.<slug>}` on pull and re-resolves it against the destination project on push — but nothing on the task path reads the result, and the `workspace` resource itself is one type `kdx sync` refuses to carry (see **kdx-cli**). |
 | `metadata.forms[].actions` | Task buttons come from the template-level `metadata.actions` only. Buttons declared under a form never render. |
 | `metadata.forms[].properties` | Studio parks the referenced data form's own option values here; no runtime path reads it. |
 | `metadata.forms[].dataForm` (inline form) | The server does not accept this field, so it is dropped on every save. Use `dataFormRef`. |

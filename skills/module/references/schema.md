@@ -138,7 +138,7 @@ Anything else renders an "unknown option type" alert.
 | `cloudEmbedding` | Embedding model picker |
 | `knowledgeSet`, `knowledgeFeature` | Knowledge pickers |
 | `dataForm` | Data-form picker |
-| `workspace` | Workspace picker |
+| `workspace` | Workspace picker — but the list it binds to is not populated by the current UI, so the field renders as nothing at all. Do not use it. |
 | `documentLookup` | Document lookup |
 | `attributeStatus` | Attribute-status picker |
 | `taxon`, `groupTaxon`, `taxonLookup`, `taxonWithProperties`, `taxonomyTaxon`, `taxonomyTaxonSelection` | Taxon pickers of varying shape |

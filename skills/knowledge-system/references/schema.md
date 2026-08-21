@@ -152,6 +152,9 @@ Resolved either through an alias table or by exact match. Anything else renders 
 `taskTemplates`, `taxon`, `taxonLookup`, `taxonWithProperties`, `taxonomyTaxon`,
 `taxonomyTaxonSelection`, `text`, `workspace`.
 
+`workspace` is the one to avoid: it is a registered type, so it never trips the unknown-type banner,
+but the picker binds to a list the current UI does not populate and the field renders as nothing.
+
 **Aliases** (routed to a direct type):
 
 | Alias | Renders as |

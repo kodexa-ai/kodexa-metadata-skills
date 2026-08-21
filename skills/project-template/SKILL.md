@@ -136,7 +136,7 @@ triggers:                                # yes, triggers CAN be embedded here
     enabled: true
 ```
 
-Field tables per collection: `references/schema.md`. Worked templates, `options:`, troubleshooting: `references/examples.md`.
+Field tables per collection: `references/schema.md`. Worked templates, `options:`, troubleshooting: `references/examples.md`. Standalone store YAML — the flat wire shape, `storeType` values and the legacy `type: store` remapping — is the **store** skill. The **project** YAML is a syncable resource of its own, and its `documentStatuses:` and `projectTemplateRef` behave nothing like the template's: `references/project-yaml.md`.
 
 ## Task statuses are org rows, not a project-private workflow
 
@@ -186,7 +186,7 @@ Round-tripped and visible in existing templates and the UI, but read by nothing:
 |---|---|
 | `attributeStatuses:` | No attribute-status table, entity or endpoint exists; never materialized. |
 | `tags:` | Round-tripped in the template body, but nothing in the platform reads them and projects have no tags field. |
-| `stores[].description`, `templateRef`, `files`, `hasImage`, `showThumbnails`, `showStoreInLabeling`, `highQualityPreview`, `allowDataEditing`, `documentProperties`, `labelExpressions` | Only `storeType`, `storePurpose`, `deleteProtection`, `name` and `slug` reach a created store. `templateRef` stamps an internal column nothing reads — it copies no documents, metadata or configuration. |
+| `stores[].description`, `templateRef`, `files`, `hasImage`, `showThumbnails`, `showStoreInLabeling`, `highQualityPreview`, `allowDataEditing`, `documentProperties`, `labelExpressions` | Only `storeType`, `storePurpose`, `deleteProtection`, `name` and `slug` reach a created store. A store has no field at all for most of the rest; `documentProperties` and `labelExpressions` exist on a document store only as inert legacy keys (**store** skill). `templateRef` stamps an internal column nothing reads — it copies no documents, metadata or configuration. |
 | `assistants[].assistantDefinitionRef`, `stores`, `schedules`, `loggingEnabled` | Never copied to the created assistant; no such columns exist. |
 | `assistants[].subscription` | Written onto the created assistant, but no current platform service evaluates it — confirm before relying on event-driven assistants. |
 | `dataForms[].templateRef`, `dataForms[].description` | Never read; `templateRef` here silently falls into the inline-create branch. |
@@ -197,4 +197,4 @@ Round-tripped and visible in existing templates and the UI, but read by nothing:
 
 ## Related skills
 
-`activity-plan` · `trigger` · `task-status` · `task-template` · `project-resource` · `data-definition` · `data-form` · `knowledge-system` · `kdx-cli`
+`activity-plan` · `trigger` · `task-status` · `task-template` · `project-resource` · `store` · `data-definition` · `data-form` · `knowledge-system` · `kdx-cli`

@@ -10,16 +10,20 @@ Each skill is written against the platform source: field names from the entity m
 |-------|--------|
 | **activity-plan** | Org-scoped step graphs — `EXECUTION`, `CREATE_TASK`, `SCRIPT`, `LLM`, `BRIDGE_CALL`, `AGENT`; the flat step envelope, dependency grammar, per-document routing, document status control |
 | **assistant** | Project-scoped pipelines — `options.pipeline` steps, taxonomy refs, agent config, and when to reach for an activity plan instead |
+| **channel-type** | The Studio agent's configuration surface — `moduleRefs`, `mcpServers`, `systemPromptFragment` and built-in `skills`; not syncable, and bind-once to a channel |
 | **data-definition** | Taxonomies — taxons, data types, `semanticDefinition` extraction prompts, type features, repeating groups, validation and formulas |
 | **data-form** | Review panels — the V2 `nodes` tree and its `v2:*` components, legacy V1 `card:*` forms, scripting and the bridge calling convention |
 | **intake** | Getting documents in — pointing an intake at a store, wiring it to an activity plan, upload scripts, tokens, and the source types that actually deliver |
 | **kdx-cli** | The `kdx` CLI — profiles and login, resource CRUD, `validate`/`apply`, `run`, and sync/deploy with manifests |
 | **knowledge-system** | Knowledge sets, feature types, item types and feature instances — `featureExpression` trees, computed slugs, options |
+| **label** | Org labels — no `slug` column, so `kdx apply` refuses them and they push only through `kdx sync push` |
+| **metadata-envelope** | The `slug`/`name`/`orgSlug`/`type` envelope shared by twelve org-scoped types — the flatten rule, what a slug is really checked against, `changeSequence`, the computed `ref`/`uri`, and repo layout |
 | **module** | Python, Go-WASM and inline-JavaScript model modules plus agent skill packs — `moduleType`, runtime refs, sidecars, inference options |
 | **project-resource** | Making an org-scoped resource usable in a project — the binding model, and the silent failures when a binding is missing |
 | **project-template** | Blueprints that provision a project — stores, assistants, taxonomies, forms, status workflows, and the closed-struct rule that drops unknown keys |
 | **prompt-template** | Prompt resources — `promptTemplate` with `FSTRING` or `MUSTACHE` templating, and the four paths that consume one |
 | **service-bridge** | Proxying an external HTTP API — `baseUrl`, named endpoints, secret interpolation, OAuth2, caching, and the egress fence |
+| **store** | Document stores and data stores — the asymmetric flatten that silently drops inner keys written flat, `storeType`/`storePurpose`, and the binding gate |
 | **task-status** | The workflow states tasks move through — `statusType`, locking, and which mechanics fail open versus closed |
 | **task-template** | Human review/approval tasks — action buttons and their transitions, attached forms, document groups, AI naming |
 | **trigger** | Starting an activity plan when a platform event fires — event kinds, JSONata filters and input mapping |

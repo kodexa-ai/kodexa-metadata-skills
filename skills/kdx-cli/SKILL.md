@@ -168,8 +168,7 @@ the sigils, branch/tag mappings: `references/sync-manifest.md`. Three more facts
 
 ## Currently broken against the Go API
 
-These still exist and still run, so they look healthy. `references/troubleshooting.md` has the
-working replacement for each.
+These still exist and still run, so they look healthy. `references/troubleshooting.md` has the fix for each.
 
 | Command | What happens |
 |---|---|
@@ -177,6 +176,7 @@ working replacement for each.
 | `kdx get stores` / `kdx describe store …` | Same prefix, same 404. Use `document-stores` / `data-stores` |
 | `kdx document-family data` | Calls a removed content-object export path → 404 |
 | `kdx task failures`, bulk `kdx task reprocess --project …` | Read a plan key the API renamed; **fail silently** — always "no failures found", exit 0 |
+| `kdx sync pull` / `push` on a `workspace:` entry | Still a registry type, but the v2 backend refuses it: every one is skipped, the run exits 0, nothing moves. `/api/workspaces` itself is alive, so `kdx get workspaces` still works |
 
 ## Declared but inert
 

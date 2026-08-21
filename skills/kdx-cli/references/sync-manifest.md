@@ -103,8 +103,13 @@ legacy Java protocol, and behaviour diverges from `kdx apply` (which is always v
 backend refuses three registry types outright — `activity-plan`, `trigger` and `task-status` —
 logging `Skipping <type> <slug> - not supported by this server (api_version)`, and it never honours
 key deletions. (`task-status` is refused because legacy has no standalone endpoint for it; the data
-round-trips inside the project YAML's `taskStatuses` array instead.) Conversely `workspace` exists
-**only** on legacy. Set `api_version: v2` on every environment running the Go API.
+round-trips inside the project YAML's `taskStatuses` array instead.) Set `api_version: v2` on every
+environment running the Go API.
+
+`workspace` is the exact mirror image: it is the one type **only the legacy backend accepts**. On
+`v2` the type is declared unsupported and pull and push log the same `Skipping workspace <slug> …`
+line — so on any environment running the Go API, where `v2` is the only workable setting,
+workspaces never sync at all. See the type table below.
 
 The version is read from the *named* environment only. `--from-profile` / `--from-url` /
 `--to-profile` / `--to-url` authenticate but select no environment, so a run without `--env` — and a
@@ -239,7 +244,7 @@ before their dependents.
 | `intake` | `intake` | org | `intakes/` | 55 |
 | `project-template` | `projecttemplate` | org | `project-templates/` | 58 |
 | `project` | `project` | org | `projects/` | 60 |
-| `workspace` | `workspace` | project | `workspaces/` | 63 (legacy backend only) |
+| `workspace` | `workspace` | project | `workspaces/` | 63 (never syncs on v2 — see below) |
 | `knowledge-set` | `knowledgeset` | org | `knowledge-sets/` | 65 |
 | `task-template` | `tasktemplate` | org (legacy: project) | `task-templates/` | 65 |
 | `task-status` | `taskstatus` | org (legacy: project) | `task-statuses/` | 65 |
@@ -262,8 +267,18 @@ Traps in that table:
 - **`task-template` and `task-status` are org-scoped on v2 but project-scoped on legacy.** On a
   legacy backend they stay inline under `projects.<slug>` in the manifest, and `task-template`
   lands under `projects/<slug>/task-templates/` on disk. `task-status` is skipped on legacy.
-- **`workspace` is legacy-only** — the Go API removed it, so a v2 backend refuses the type. It sits
-  at 63, before task-templates (65), because task templates carry `${workspace.<slug>}` sigils.
+- **`workspace` never syncs against the Go API.** The v2 backend declares the type unsupported, so
+  every entry — pull *and* push — is logged `Skipping workspace <slug> - not supported by this
+  server (api_version)`, counted as skipped, and the run still exits 0. Nothing errors and nothing
+  moves. `--discover` applies no such check, so a generated manifest can list `workspace:` slugs the
+  very next pull ignores; delete them. The type sits at 63, before task-templates (65), because task
+  templates carry `${workspace.<slug>}` sigils.
+- **This is a sync-layer refusal, not a missing API.** `/api/workspaces` is registered and served —
+  list, get, create, update, delete — so `kdx get workspaces`, `kdx describe workspace <id>` and
+  `kdx delete workspace <id>` all work, and the `${workspace.<slug>}` sigil still resolves against
+  the destination project's workspaces at push time. Only `kdx sync`'s own pull/push of the resource
+  file opts out. There is no `workspace://` resolver scheme and `workspace` is not a valid
+  project-resource binding type.
 
 ## Portability: `${org}`
 
