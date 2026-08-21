@@ -1,35 +1,43 @@
 # Kodexa Metadata Skills
 
-A [Claude Code](https://claude.ai/claude-code) plugin providing skills for authoring [Kodexa platform](https://kodexa.ai) metadata. Each skill includes complete reference schemas, interactive wizards, YAML examples, and common mistake guides.
+A [Claude Code](https://claude.ai/claude-code) plugin providing skills for authoring [Kodexa platform](https://kodexa.ai) metadata — the YAML behind data definitions, activity plans, task templates, forms, modules, knowledge sets and the rest of the resource model.
+
+Each skill is written against the platform source: field names from the entity models, enum values from the constants that validate them, endpoints and status codes from the handlers, CLI flags from the command definitions. Where a field is accepted and then silently ignored, the skill says so rather than leaving you to find out.
 
 ## Skills
 
-| Skill | Description |
-|-------|-------------|
-| **data-definition** | Taxon hierarchies, data types, validation rules, conditional formatting, semantic extraction definitions |
-| **project-template** | Project blueprints — stores, assistants, taxonomies, data forms, status workflows, knowledge sets, triggers, and scheduled jobs |
-| **module** | Model modules (Python ML/AI) and skill modules (file packs) — runtime config, sidecars, inference options, deployment |
-| **data-form** | V2 schema-driven UI forms — UINode component trees, data binding, QuickJS scripting, Bridge API |
-| **assistant** | Event-driven processing pipelines — connections, subscriptions, multi-step orchestration, scheduling |
-| **task-template** | Org-scoped task definitions — options, forms, actions, document family groups, AI naming, team assignment |
-| **activity-plan** | Org-scoped step graphs — `CREATE_TASK`, `EXECUTION`, `BRIDGE_CALL`, `SCRIPT`, `LLM`, `APPROVAL`, `AGENT` steps with inputs schema and templates |
-| **knowledge-system** | Feature types, item types, knowledge sets — rule-based processing customization with DNF expressions |
-| **service-bridge** | External API proxy endpoints — centralized authentication, header management, caching |
-| **prompt-template** | LLM prompt configurations — extraction prompts, system prompts, knowledge-driven overrides |
-| **kdx-cli** | Kodexa CLI — kubectl-style commands, profile management, sync/deploy workflows, secret management |
+| Skill | Covers |
+|-------|--------|
+| **activity-plan** | Org-scoped step graphs — `EXECUTION`, `CREATE_TASK`, `SCRIPT`, `LLM`, `BRIDGE_CALL`, `AGENT`; the flat step envelope, dependency grammar, per-document routing, document status control |
+| **assistant** | Project-scoped pipelines — `options.pipeline` steps, taxonomy refs, agent config, and when to reach for an activity plan instead |
+| **channel-type** | The Studio agent's configuration surface — `moduleRefs`, `mcpServers`, `systemPromptFragment` and built-in `skills`; not syncable, and bind-once to a channel |
+| **data-definition** | Taxonomies — taxons, data types, `semanticDefinition` extraction prompts, type features, repeating groups, validation and formulas |
+| **data-form** | Review panels — the V2 `nodes` tree and its `v2:*` components, legacy V1 `card:*` forms, scripting and the bridge calling convention |
+| **intake** | Getting documents in — pointing an intake at a store, wiring it to an activity plan, upload scripts, tokens, and the source types that actually deliver |
+| **kdx-cli** | The `kdx` CLI — profiles and login, resource CRUD, `validate`/`apply`, `run`, and sync/deploy with manifests |
+| **knowledge-system** | Knowledge sets, feature types, item types and feature instances — `featureExpression` trees, computed slugs, options |
+| **label** | Org labels — no `slug` column, so `kdx apply` refuses them and they push only through `kdx sync push` |
+| **metadata-envelope** | The `slug`/`name`/`orgSlug`/`type` envelope shared by twelve org-scoped types — the flatten rule, what a slug is really checked against, `changeSequence`, the computed `ref`/`uri`, and repo layout |
+| **module** | Python, Go-WASM and inline-JavaScript model modules plus agent skill packs — `moduleType`, runtime refs, sidecars, inference options |
+| **project-resource** | Making an org-scoped resource usable in a project — the binding model, and the silent failures when a binding is missing |
+| **project-template** | Blueprints that provision a project — stores, assistants, taxonomies, forms, status workflows, and the closed-struct rule that drops unknown keys |
+| **prompt-template** | Prompt resources — `promptTemplate` with `FSTRING` or `MUSTACHE` templating, and the four paths that consume one |
+| **service-bridge** | Proxying an external HTTP API — `baseUrl`, named endpoints, secret interpolation, OAuth2, caching, and the egress fence |
+| **store** | Document stores and data stores — the asymmetric flatten that silently drops inner keys written flat, `storeType`/`storePurpose`, and the binding gate |
+| **task-status** | The workflow states tasks move through — `statusType`, locking, and which mechanics fail open versus closed |
+| **task-template** | Human review/approval tasks — action buttons and their transitions, attached forms, document groups, AI naming |
+| **trigger** | Starting an activity plan when a platform event fires — event kinds, JSONata filters and input mapping |
 
 ## Installation
-
-Add the marketplace and install the plugin in Claude Code:
 
 ```bash
 claude plugin marketplace add kodexa-ai/kodexa-metadata-skills
 claude plugin install kodexa-metadata-skills
 ```
 
-After installation, the skills are automatically available in all Claude Code sessions.
+The skills then load automatically when Claude Code detects a matching task.
 
-For development/testing, you can also load the plugin directly from a local directory:
+To try a local checkout without installing:
 
 ```bash
 claude --plugin-dir /path/to/kodexa-metadata-skills
@@ -37,67 +45,47 @@ claude --plugin-dir /path/to/kodexa-metadata-skills
 
 ## Usage
 
-Skills are invoked automatically when Claude Code detects a matching task, or you can invoke them explicitly:
+Ask for what you want and the relevant skill loads on its own:
 
 ```
-# Ask Claude Code to create metadata
 > Create a data definition for extracting purchase order data
+> Why is my trigger not firing?
+> Add an approval step to this activity plan
+```
 
-# Claude Code will automatically use the data-definition skill
+You can also invoke one explicitly:
 
-# Or invoke directly via the Skill tool
+```
 > /kodexa-metadata-skills:data-definition
 ```
 
-### Interactive Wizard
+## How the skills are organised
 
-Each skill offers a guided wizard mode. When you ask to create metadata from scratch, the skill walks you through:
+Each skill follows the progressive-disclosure layout:
 
-1. Purpose and use case questions
-2. Field and component selection
-3. Validation and business rule configuration
-4. Complete YAML generation
+```
+skills/<name>/
+  SKILL.md              # ≤200 lines — always loaded
+  references/*.md       # loaded on demand
+```
 
-### Reference Mode
+`SKILL.md` carries the shape that works plus everything separating "works" from "silently broken". Bulk field tables, enum inventories, long examples and troubleshooting live in `references/`, pulled in only when needed.
 
-When editing existing metadata or debugging issues, the skill loads the complete schema reference into context to assist with any modification.
+Every skill also carries a **Declared but inert** section. Several Kodexa resources persist and round-trip fields that nothing reads — some are editable in the UI. Those fields are listed rather than omitted, because you will meet them in existing YAML and silence reads as endorsement.
 
-## Skills Detail
+## Contributing
 
-### Tier 1 — Core
+See [CONTRIBUTING.md](CONTRIBUTING.md) for where truth lives, the house rules that keep this repo publishable, and how to check a change.
 
-**data-definition** — Author taxonomy YAML for document extraction. Covers all 12 data types (STRING, NUMBER, CURRENCY, DATE, SELECTION, etc.), value paths, validation formula functions, conditional formatting, repeating groups, and semantic definitions.
+Two things worth knowing before you edit:
 
-**project-template** — Author project blueprint YAML. Covers stores, assistants, taxonomies, data forms, document/task/attribute status workflows, inline and org-level task templates, scheduled jobs, knowledge sets, project options (with companion + execution policy), and how triggers and activity-plans bind to projects.
-
-**module** — Author module YAML for both model (Python) and skill (file pack) types. Covers runtime configuration, sidecar dependencies, inference options, deployment defaults, Python entry point patterns, and magic parameter injection.
-
-### Tier 2 — Project Components
-
-**data-form** — Author V2 schema-driven forms in JSON. Covers UINode component tree, layout/display/data components, Bridge API namespaces (kodexa.data, kodexa.navigation, kodexa.form, kodexa.http, kodexa.log), event handling, and scripting.
-
-**assistant** — Author assistant pipeline YAML. Covers connection types (STORE, CHANNEL, DOCUMENT_FAMILY, WORKSPACE), subscription expressions, multi-step pipeline chaining, extension pack structure, and Python implementation.
-
-**task-template** — Author org-scoped task template YAML. Covers `metadata.options` (unified field/option list with `groupOptions` and `listType`), forms, action buttons, document family groups, AI naming, chat prompt, execution policy, companion config, and the `initialStatusSlug` that resolves against project-bound task-statuses.
-
-**activity-plan** — Author org-scoped activity plan YAML — the new home for orchestration that used to live inside `task_template.planTemplate`. Covers all seven step kinds (`CREATE_TASK`, `EXECUTION`, `BRIDGE_CALL`, `SCRIPT`, `LLM`, `APPROVAL`, `AGENT`), per-kind config schemas, JSON Schema inputs, default title/description templates, `dependsOn` outcomes, and how triggers fire activity plans on project events.
-
-### Tier 3 — Advanced
-
-**knowledge-system** — Author knowledge feature types, item types, and knowledge sets as a coordinated set. Covers DNF expression logic, immutability constraints, common patterns (vendor, document type, language), and feature-to-item wiring.
-
-**service-bridge** — Author service bridge YAML for external API integration. Covers authentication patterns (API key, Bearer, Basic), endpoint mapping, caching configuration, and usage from modules and forms.
-
-**prompt-template** — Author LLM prompt templates. Covers standalone YAML prompts and skill module embedded prompts, variable placeholders, output format configuration, and integration with the knowledge system for per-vendor prompt overrides.
-
-### CLI & Operations
-
-**kdx-cli** — Use the Kodexa CLI (`kdx`) for platform operations. Covers profile management, resource CRUD (get, describe, apply, delete), sync/deploy workflows with `sync-config.yaml` and manifests, the syncable resource catalog (including `activity-plan`, `trigger`, org-scoped `task-template`/`task-status`), the `kdx secret` plugin, resource reference sigils (`${taskTemplate.<slug>}`, `${activityPlan.<slug>}`), branch-mapped GitOps deployments, Python dataclass generation, and troubleshooting.
+- **Verify against platform source, never against another document.** Most errors here got in by being copied forward without re-checking.
+- **Bump `version` in `.claude-plugin/plugin.json` in the same PR as any change under `skills/`.** That field pins the plugin — installed users receive nothing until it moves.
 
 ## Documentation
 
-Full Kodexa platform documentation is available at [developer.kodexa.ai](https://developer.kodexa.ai).
+Full Kodexa platform documentation is at [developer.kodexa.ai](https://developer.kodexa.ai).
 
 ## License
 
-This project is licensed under the Apache License 2.0 — see the [LICENSE](LICENSE) file for details.
+Apache 2.0 — see [LICENSE](LICENSE).

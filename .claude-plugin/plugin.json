@@ -1,7 +1,7 @@
 {
   "name": "kodexa-metadata-skills",
-  "description": "Skills for authoring Kodexa platform metadata: data definitions, project templates, modules, data forms, assistants, task templates, activity plans, and more",
-  "version": "1.1.0",
+  "description": "Skills for authoring Kodexa platform metadata: data definitions, activity plans, task templates, triggers, data forms, modules, knowledge sets, intakes, service bridges and more",
+  "version": "2.0.0",
   "author": {
     "name": "Kodexa",
     "email": "support@kodexa.com"
@@ -9,5 +9,31 @@
   "homepage": "https://developer.kodexa.ai",
   "repository": "https://github.com/kodexa-ai/kodexa-metadata-skills",
   "license": "Apache-2.0",
-  "keywords": ["kodexa", "metadata", "data-definitions", "project-templates", "modules", "data-forms", "assistants", "task-templates", "activity-plans", "triggers", "knowledge-system", "taxonomy", "kdx", "cli"]
+  "keywords": [
+    "kodexa",
+    "metadata",
+    "data-definitions",
+    "taxonomy",
+    "project-templates",
+    "modules",
+    "data-forms",
+    "assistants",
+    "task-templates",
+    "task-statuses",
+    "activity-plans",
+    "triggers",
+    "project-resources",
+    "intakes",
+    "knowledge-system",
+    "prompt-templates",
+    "service-bridges",
+    "kdx",
+    "cli",
+    "stores",
+    "document-stores",
+    "data-stores",
+    "labels",
+    "channel-types",
+    "metadata-envelope"
+  ]
 }

@@ -1,321 +1,167 @@
 ---
 name: task-template
-description: "Use when creating or editing Kodexa task templates — org-scoped YAML defining reusable task configurations (options, forms, actions, document family groups) that projects bind to via project resources"
+description: "Use when creating or editing a Kodexa task template — the org-scoped YAML behind a human review/approval task: action buttons and their status transitions, attached data forms, document upload groups, AI task naming, chat prompt, agent shortcuts, panel and button visibility, team/priority defaults, and task locking. Also use when an activity-plan CREATE_TASK step references a task template by slug."
 ---
 
 # Kodexa Task Template Authoring
 
-## Overview
+A task template is the **organization-scoped** definition of a human task's shape: the buttons a
+reviewer sees, the data forms that open, the documents that attach, how the task is titled, which
+panels are visible. One YAML file per template.
 
-Task templates define reusable task configurations. Since the **activity refactor (2026-05-02)** they are **organization-scoped** metadata resources — one YAML file per template, synced at the org level. Projects bind to specific templates via the `kdxa_project_resources` table; the same template can be reused across many projects.
+Projects do not own templates — they **bind** to them (the binding lives in `kdxa_project_resources`).
+The same template is reused by many projects.
 
-**Automation that used to live inside a task template (the old `planned: true` + `planTemplate.steps:` fields) has moved into a separate resource: `activity-plan`.** Task templates are now purely about the human-task shape — fields, forms, actions, document groups, assignment, behavior. See the `activity-plan` skill for orchestration.
+Automation is not here. Step graphs are a separate `activity-plan` resource. `planned:` and
+`planTemplate:` are **gone** — the fields and their `kdxa_task_templates` columns were both removed,
+and the decoder discards them silently, so authoring them looks fine and does nothing.
 
-## When to Use
-
-- Defining a reusable human task (review, approval, exception resolution)
-- Adding custom fields/options to a task type
-- Attaching one or more data forms to a task
-- Configuring document family groups
-- Setting team ownership, AI naming, chat prompt, execution policy
-- Defining action buttons users can click in the task UI
-
-## What Has Changed
-
-| Old (pre-refactor) | New |
-|---|---|
-| Project-scoped (one per project) | **Org-scoped** (`task-template://orgSlug/slug`) |
-| `planned: true` + `planTemplate.steps:` for auto-orchestration | **Removed.** Use a separate `activity-plan` resource and a `trigger` to launch it |
-| `assignmentRules: { autoAssign, assignToRole, assignToTeam }` | **Not part of the schema.** Use `metadata.teamSlug`; assignment behavior is platform-level |
-| `documentGroups:` | Renamed to **`documentFamilyGroups:`** |
-| Top-level `fields:` (sometimes confused with `options:`) | Single **`metadata.options:`** array (the field/option distinction is gone) |
-| Action `targetStatus` / `icon` / `color` / `setAttributes` | **Folded into `properties` map** on each action |
-| — | **New top-level `initialStatusSlug:`** — initial task status, resolved against the project's bound `task-status` resources |
-
-## Top-Level Structure
+## The file that works
 
 ```yaml
-slug: invoice-review                         # Required — unique within (orgSlug, slug)
-name: "Invoice Review"                       # Required — display name (DB column: title)
-organizationId: my-org-uuid                  # Required — the owning org
-description: "Manual review of extracted invoices"
-initialStatusSlug: todo                      # Optional — must match a task-status slug bound to the project at runtime
-deprecated: false                            # Optional — mark legacy plan-vehicle templates
-metadata:
-  options: []                                # Field definitions (see below)
-  forms: []                                  # Attached data forms
-  actions: []                                # Action buttons
-  documentFamilyGroups: []                   # Document grouping config
-  workspaceId: ""                            # Optional — workspace binding (UUID)
-  properties: {}                             # Custom map (free-form)
-  priority: 2                                # Default priority (int)
-  teamSlug: finance                          # Default team
-  aiNaming: { enabled: true, prompt: "..." } # Optional — AI-generated title/description
-  chatPrompt: { enabled: false, prompt: "" } # Optional — auto chat prompt on task open
-  executionPolicy: {}                        # Optional — session.ExecutionPolicy
-  companion: {}                              # Optional — workspace companion agent config
-```
-
-> The `planned` and `planTemplate` fields still exist on the Go struct as **Phase 2 transition stubs** (not mapped to the database). **Do not author them in new YAML.** Phase 4 removes them outright.
-
-## Options (Custom Fields)
-
-The `options` array is the unified field/option list. There is no longer a separate `fields:` section.
-
-```yaml
-metadata:
-  options:
-    - name: approval_status
-      type: select                  # text, textarea, number, date, select, boolean
-      label: "Approval Status"
-      required: true
-      possibleValues:
-        - value: approved
-          label: "Approved"
-        - value: rejected
-          label: "Rejected"
-        - value: escalated
-          label: "Escalate to Manager"
-
-    - name: review_notes
-      type: textarea
-      label: "Review Notes"
-      required: false
-      hint: "Capture rationale for the decision"
-
-    - name: priority_score
-      type: number
-      label: "Priority Score"
-      default: 0
-
-    - name: due_date
-      type: date
-      label: "Due Date"
-      required: true
-
-    - name: is_urgent
-      type: boolean
-      label: "Urgent"
-      falseLabel: "Normal"          # Custom label for false state
-
-    # Conditional / advanced
-    - name: extraction_mode
-      type: select
-      label: "Extraction Mode"
-      tabName: "Settings"            # Group under a tab in the UI
-      showIf: "advancedMode == true" # Conditional visibility
-      developerOnly: true            # Hide unless developer-mode enabled
-      showOnPopup: false             # Show in task creation popup
-      possibleValues:
-        - { value: auto, label: "Automatic" }
-        - { value: manual, label: "Manual" }
-
-    # Nested / list-of-objects
-    - name: line_items
-      type: list
-      listType: object               # object, primitive
-      listLabel: "Line Items"
-      listDescription: "Itemized invoice rows"
-      groupOptions:                  # Nested option definitions (each list entry is an object)
-        - { name: description, type: text, label: "Description", required: true }
-        - { name: quantity,    type: number, label: "Qty" }
-        - { name: amount,      type: number, label: "Amount" }
-```
-
-| Option key | Purpose |
-|---|---|
-| `name` | Field identifier (required) |
-| `type` | `text`, `textarea`, `number`, `date`, `select`, `boolean`, `list`, etc. |
-| `subType` | Optional refinement of `type` |
-| `listType` | For `type: list` — `object` for nested editor, `primitive` for scalar list |
-| `groupOptions` | For `type: list` with `listType: object` — nested option defs |
-| `label` | UI label |
-| `falseLabel` | Custom label for `boolean` false state |
-| `hint` | Inline help text |
-| `description` | Longer description |
-| `required` | Boolean |
-| `default` | Default value |
-| `possibleValues` | Array of `{ value, label, description? }` for `select` |
-| `tabName` | UI tab grouping |
-| `showIf` | Expression toggling visibility |
-| `developerOnly` | Hidden unless developer mode |
-| `showOnPopup` | Show in creation popup |
-| `featureFlag` | Hide unless flag enabled |
-| `displayProperties` | Free-form UI hints |
-| `aliases` | Alternate names for migration/back-compat |
-
-## Forms
-
-Attach data forms to the task. Each form can have its own action buttons and panel visibility.
-
-```yaml
-metadata:
-  forms:
-    - dataFormRef: "${orgSlug}/invoice-form"   # Reference an org-level data-form
-      actions:
-        - { label: "Save Draft", type: save }
-        - { label: "Submit",     type: submit }
-      availablePanels:
-        documentStores: true
-        exceptions: true
-        properties: false
-      properties: {}                            # Free-form per-form config
-```
-
-## Actions
-
-Action buttons in the task UI. Schema is intentionally lean — extra behavior lives in `properties`.
-
-```yaml
-metadata:
-  actions:
-    - uuid: "approve-action"
-      type: approve                # Free-form discriminator the UI/orchestrator interprets
-      label: "Approve"
-      properties:
-        targetStatus: approved     # Status transition (free-form key)
-        icon: check
-        color: green
-        shortcut: "a"
-        setAttributes:
-          approval_status: approved
-    - uuid: "reject-action"
-      type: reject
-      label: "Reject"
-      properties:
-        targetStatus: rejected
-        icon: close
-        color: red
-```
-
-> `TaskTemplateAction` only declares `uuid`, `type`, `label`, `properties` at the schema level. UI conventions for icon/color/targetStatus are stored inside `properties`.
-
-## Document Family Groups
-
-Renamed from `documentGroups`. Group documents that should be associated with the task.
-
-```yaml
-metadata:
-  documentFamilyGroups:
-    - name: "Source Invoices"
-      notes: "Primary documents for review"
-      documentFamilyFilter: "*.pdf"          # Filter expression
-      maxHits: 5                              # Max families to surface
-      sort: "createdOn desc"                  # Optional ordering
-      automaticallyAdd: true                  # Auto-attach matching families
-      editable: true                          # User may add/remove
-      uploadOnly: false                       # If true, only allow uploads
-      uniqueFilenames: true                   # Enforce unique filenames
-      maxPages: 100
-      hardMaxPages: 500
-      maxSize: 10485760                       # Bytes (10 MB)
-      titlePrompt: "Generate task title from this invoice"
-```
-
-## Team, Priority, AI Naming, Chat Prompt
-
-```yaml
+type: taskTemplate                # required by `kdx apply` (or pass --type)
+orgSlug: acme-corp                # required (or pass --org-slug)
+slug: invoice-review              # required — unique in the org, 3–100 chars
+name: "Invoice Review"            # canonical display name
+title: "Invoice Review"           # legacy column, still read at runtime — set BOTH (see below)
+description: "Manual review of extracted invoice data"
+template: false                   # true only for starter/library templates
+deprecated: false                 # badge only; nothing is gated on it
 metadata:
   teamSlug: finance-reviewers
-  priority: 2
-
-  aiNaming:
-    enabled: true
-    prompt: "Generate a concise task title from the document headers."
-
-  chatPrompt:
-    enabled: true
-    prompt: "Help me complete this invoice review."
-```
-
-## Execution Policy & Companion
-
-`executionPolicy` (from `session.ExecutionPolicy`) controls how the task interacts with sessions and the orchestrator. `companion` configures the workspace companion agent surfaced when the task is open.
-
-```yaml
-metadata:
-  companion:
-    agentRuntimeRef: "${orgSlug}/review-agent"
-    moduleRefs:
-      - "${orgSlug}/review-helpers"
-    prompt: "Help the reviewer complete this invoice."
-```
-
-## Complete Example
-
-```yaml
-slug: invoice-review
-name: "Invoice Review"
-organizationId: ${orgSlug}
-description: "Manual review and approval of extracted invoice data"
-initialStatusSlug: todo
-metadata:
-  priority: 2
-  teamSlug: finance-reviewers
-
-  options:
-    - name: approval_status
-      type: select
-      label: "Approval"
-      required: true
-      possibleValues:
-        - { value: approved, label: "Approved" }
-        - { value: rejected, label: "Rejected" }
-        - { value: escalated, label: "Escalate to Manager" }
-    - name: review_notes
-      type: textarea
-      label: "Review Notes"
-    - name: confidence_override
-      type: number
-      label: "Manual Confidence Score"
-
-  forms:
-    - dataFormRef: "${orgSlug}/invoice-form"
-      actions:
-        - { label: "Submit", type: submit }
-
+  priority: 2                     # 1 Highest … 5 Lowest
+  properties:
+    hideDefaultCancelButton: true
   actions:
-    - uuid: approve
-      type: approve
+    - slug: approve               # slug is the action's IDENTITY
       label: "Approve"
       properties:
-        targetStatus: approved
-        icon: check
-        color: green
-        shortcut: "a"
-        setAttributes:
-          approval_status: approved
-    - uuid: reject
-      type: reject
-      label: "Reject"
-      properties:
-        targetStatus: rejected
-        icon: close
-        color: red
-        shortcut: "r"
-
-  documentFamilyGroups:
-    - name: "Invoice"
-      documentFamilyFilter: "*.pdf"
-      maxHits: 3
-      automaticallyAdd: true
-      editable: false
-      titlePrompt: "Generate a review task title from the invoice"
-
-  aiNaming:
-    enabled: true
-    prompt: "Title from invoice number and vendor."
+        statusSlug: approved      # the key that actually transitions the task
 ```
 
-## Common Mistakes
+```bash
+kdx apply -f task-templates/invoice-review.yaml
+```
 
-| Mistake | Fix |
+Without `type:` `kdx apply` errors with *"resource file must contain a 'type' field"*; without
+`orgSlug:` it errors with *"cannot determine the target organization"*; without `slug:` it refuses to
+push. Accepted `type:` spellings: `taskTemplate`, `task-template`, `task-templates`, `taskTemplates`,
+`tasktemplate`. Do **not** put `organizationId:` in the file — the CLI strips it before the push, so
+it is inert noise.
+
+## Six things that silently break
+
+**1 — `slug` is an action's identity; never let `uuid` disagree with it.**
+An action's `slug` is what an activity plan's `dependsOn: "<stepSlug>:<actionSlug>"` edge points at,
+and what is recorded as the step's completion token when the task finishes. `uuid` is the deprecated
+legacy spelling; readers alias it when `slug` is absent. But if one action carries **both** and they
+differ, the platform refuses: every activity start (and plan validation) whose `dependsOn` names an
+action on a `CREATE_TASK` step using this template fails with *"conflicting identities (uuid … vs
+slug …) — uuid is the legacy spelling of slug; keep the slug"*. One bad action poisons all of them.
+To rename a button, change `label` and keep the `slug`.
+
+**2 — the status transition key is `properties.statusSlug`.**
+`targetStatus` appears nowhere in the platform. An action with only `targetStatus` is a no-op button:
+it saves the task, never transitions it, so no completion token is written and the downstream
+activity branch never fires. (`properties.statusId` is read only when `statusSlug` is absent.)
+
+```yaml
+properties:
+  statusSlug: approved      # ✅ works
+  # targetStatus: approved  # ❌ read by nothing
+```
+
+**3 — attribute writes use `properties.attributes`, an array.**
+`setAttributes` is read by nothing. The real key writes taxon-path values onto the task's extracted
+data attributes (stamped with the reviewer's `user://` owner), not onto task fields. See
+`references/actions.md`.
+
+**4 — set `title:` as well as `name:`.**
+`name` is the canonical column; `title` is a separate legacy column still read *directly* in two
+places: the `{templateName}` placeholder in AI naming, on both the activity `CREATE_TASK` path and
+the intake path; and the `CREATE_TASK` "no title supplied" fallback. A template authored with only
+`name:` renders `{templateName}` as an empty string and gives activity-created tasks a **blank
+title**. Only the create-task API reads `name` first and falls back to `title`.
+
+**5 — the org placeholder is `${org}`, not `${orgSlug}`.**
+In a `kdx sync` tree the CLI substitutes `${org}/` across the whole payload and hard-fails the push if
+any `${org}` survives. `${orgSlug}` is a *server-side* placeholder expanded **only** inside
+`metadata.forms[].dataFormRef`. Anywhere else — `companion.moduleRefs`, anything — `${orgSlug}` is
+stored and used as a literal string that will never resolve.
+
+**6 — deleting a key usually does not delete it.**
+`metadata.properties` is the one region where the local file is the desired state: remove a key from
+it and `kdx sync push` pushes the removal — but only while the file still *has* a `properties:` node.
+Delete the whole block and the region stops counting as authored, so the push keeps every server-side
+key; spell a full clear as `properties: {}`. Everywhere else in the file an absent key is
+indistinguishable from a key you never mentioned — push silently no-ops on the removal, `--force`
+included — so clear those by setting an explicit empty value instead.
+
+There is also **no server-side task-template validation**: the rule set is empty and the handler
+defaults to disabled. Nothing will catch any of the above for you.
+
+## Declared but inert
+
+Persisted, round-tripped, visible in existing YAML and sometimes editable in Studio — and read by
+nothing at runtime. Do not delete them from files that already have them; do not add them to new ones.
+
+| Field | Note |
 |---|---|
-| Authoring `planned: true` + `planTemplate.steps:` | Remove. Use a separate `activity-plan` resource and a `trigger` to launch it on task creation. |
-| Using `assignmentRules:` | Not in the schema. Use `metadata.teamSlug` for team ownership. |
-| Using `documentGroups:` | Renamed to `documentFamilyGroups:`. |
-| Splitting fields into separate `fields:` and `options:` arrays | Use a single `metadata.options:` array. |
-| Putting `targetStatus` / `icon` / `color` directly on an action | Move them into the action's `properties:` map. |
-| Project-scoped slug references like `task-template://org/project/slug` | Templates are org-scoped now: `task-template://orgSlug/slug` (2 parts only). |
-| Hardcoding a status UUID | Use `initialStatusSlug:` and ensure the project has the matching `task-status` bound. |
-| Re-creating the same template per project | Define once at org level; each project binds to it via project resources. |
+| `initialStatusSlug` (top level) | No reader anywhere. Set the starting status on the activity-plan `CREATE_TASK` step's `taskStatusSlug`, or `statusSlug` in the create request. A task with no status is excluded from take-next entirely. |
+| `metadata.options[]` | The whole option list. Studio's "Options" tab edits `metadata.properties`, not this. No task-runtime renderer exists. |
+| `metadata.executionPolicy` | Editable in Studio; retries/timeouts actually come from the activity-plan step's own `executionPolicy`. |
+| `metadata.workspaceId` | No reader. `kdx sync` still templates the UUID as `${workspace.<slug>}` on pull and re-resolves it against the destination project on push — but nothing on the task path reads the result, and the `workspace` resource itself is one type `kdx sync` refuses to carry (see **kdx-cli**). |
+| `metadata.forms[].actions` | Task buttons come from the template-level `metadata.actions` only. Buttons declared under a form never render. |
+| `metadata.forms[].properties` | Studio parks the referenced data form's own option values here; no runtime path reads it. |
+| `metadata.forms[].dataForm` (inline form) | The server does not accept this field, so it is dropped on every save. Use `dataFormRef`. |
+| `metadata.companion.agentRuntimeRef`, `.prompt` | Only `companion.moduleRefs` is acted on. Runtime selection comes from the **project's** companion config. |
+| `documentFamilyGroups[].required`, `.knowledgeFeatures` | Enforced/rendered only for groups declared on an **activity plan**, not on a task template. |
+| Action `type` | Part of the action shape and common in older YAML, but no task path reads it; Studio does not write it. Harmless to keep, pointless to add. |
+| Action `properties.automaticallyTakeNextTask` | Written by the Studio action editor; no reader. |
+| Action `properties.keybind` / `.altKeybinds` | Studio's *Keybind* field writes these; the task toolbar reads `shortcut` / `shortcutAltKey`. Author those. |
+| `metadata.properties.defaultToDataForm`, `openNotesAutomatically`, `requireExplanations` | Studio checkboxes with no consumer on the task path. `hideFloatingHelper`, sitting beside them in the same panel, *is* live — see `references/fields.md`. |
+| Option-level `subType`, `showOnPopup`, `featureFlag` | Moot given `metadata.options` itself is inert; `showOnPopup` is a project-template mechanic. |
+
+## What changed from older YAML
+
+| Old | Now |
+|---|---|
+| Project-scoped, one copy per project | Org-scoped; projects bind via project resources. URI is `task-template://acme-corp/invoice-review` — two parts. A third segment is silently ignored; a `:version` suffix is rejected. |
+| `planned: true` + `planTemplate.steps:` | Removed from the resource and from the database. Author an `activity-plan` instead. |
+| `assignmentRules:` | Never part of this schema. Use `metadata.teamSlug`; there is no auto-assign-to-user. |
+| `documentGroups:` | Read by nothing. The live key is `documentFamilyGroups:`. |
+| Separate `fields:` and `options:` | Neither is live — see "Declared but inert". |
+| Action `targetStatus` / `setAttributes` | `properties.statusSlug` / `properties.attributes[]` |
+| Action `uuid:` | `slug:` — `uuid` is deprecated and aliased |
+
+## Common mistakes
+
+| Mistake | What happens |
+|---|---|
+| One action declares `uuid` and `slug` with different values | Activity starts referencing this template's actions fail loudly. |
+| `properties.targetStatus` | Button saves but never transitions; downstream steps never fire. |
+| `properties.setAttributes` | Nothing is written. Use the `attributes` array. |
+| `name:` without `title:` | Activity-created tasks get a blank title, and `{templateName}` renders empty on both the activity and intake AI-naming paths. |
+| `${orgSlug}` outside `forms[].dataFormRef` | The literal string is stored and never resolves. |
+| `sort: "createdOn desc"` on a document group | Not a recognised value. Grammar is `path\|created\|modified\|size` + `:asc\|:desc`. |
+| A path- or glob-style `documentFamilyFilter` | Silently degrades to "allow every file". It parses extensions only. |
+| Expecting `initialStatusSlug` to set the status | Never read. Tasks with no status are invisible to take-next. |
+| Expecting `teamSlug`, `priority` or `documentFamilyGroups` to shape an activity-created task | An activity `CREATE_TASK` step writes no team, takes priority from the step or the activity, and never reads the document groups. `teamSlug` applies on the create-task API and intake; `priority` only pre-fills the New Task form. |
+| An AI-naming prompt built on `{metadata:…}` / `{externalData:…}` | Both render empty on the activity `CREATE_TASK` path — that context carries no document metadata. They resolve on intake and the create-task API only. |
+| Re-creating the same template per project | Define once at org level and bind each project to it. |
+| Editing `metadata.actions` on a live template | Tasks carry no action data of their own — buttons are hydrated from the template on every read, so open tasks change instantly, including the `slug` an in-flight activity is waiting on. |
+
+## References
+
+- `references/fields.md` — every live `metadata` key: the `properties` switchboard, `forms[]`,
+  `documentFamilyGroups[]`, `aiNaming` and `chatPrompt` placeholder tables, `agentShortcuts[]`,
+  `teamSlug`/`priority`, `companion`, panel ids, plus how tasks get created, assignment/take-next and
+  locking.
+- `references/actions.md` — the action model end to end: identity, the activity-plan contract, and
+  the full `properties` vocabulary.
+- `references/examples.md` — three complete files with their `kdx` invocations.
+
+Related skills: `activity-plan` (CREATE_TASK steps and `dependsOn` edges), `task-status` (what
+`statusSlug` points at, plus the `locked` / `lockDocumentFamily` defaults an action overrides),
+`data-form` (what `dataFormRef` points at), `project-resource` and `project-template` (where the
+project→template binding is authored), `kdx-cli` (`kdx apply`, `kdx sync push`).

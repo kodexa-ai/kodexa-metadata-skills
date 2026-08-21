@@ -1,389 +1,198 @@
 ---
 name: module
-description: "Use when creating, configuring, or debugging Kodexa modules — YAML metadata for model-type modules (Python ML/AI processing) and skill-type modules (file-based resources), including runtime configuration, sidecars, inference options, and deployment settings"
+description: "Use when authoring or debugging a Kodexa module.yml / model.yml — Python, Go-WASM or inline-JavaScript model modules and agent skill packs. Covers moduleType, moduleRuntimeRef, moduleSidecars, inferenceOptions, actions, contents/ignoredContents packaging, the parameters the runtime injects, and applying with kdx."
 ---
 
 # Kodexa Module Authoring
 
-## Overview
+A module is a unit of executable work owned by an organization. `moduleType: model` modules run
+against documents — a Python package, a Go-WASM plugin, or an inline JavaScript snippet;
+`moduleType: skill` modules are file packs an agent loads as a Claude skill. Both live in
+`kdxa_modules` and are created and updated with `kdx apply -f module.yml`.
 
-Modules are the execution units of the Kodexa platform. There are two types: **model modules** (Python code that processes documents) and **skill modules** (file packs like prompts, configs, and knowledge). This skill covers the YAML metadata for both types, plus Python entry point patterns for model modules.
-
-## When to Use
-
-- Creating a new module YAML (model or skill)
-- Configuring inference options for user-configurable parameters
-- Setting up module runtime references and sidecars
-- Writing Python entry points for model modules
-- Configuring deployment settings (replicas, memory, containers)
-- Debugging module loading or execution issues
-
-## Interactive Wizard
-
-1. **Module type** — Model (Python code) or Skill (file pack)?
-2. **Purpose** — What does it do? (extraction, classification, transformation, event handling, chat, reporting)
-3. **Runtime** — Which runtime? (base-cloud-model-runtime is default for models)
-4. **Sidecars** — Need shared dependencies? (kodexa-llm-model for LLM access, etc.)
-5. **Options** — What should users be able to configure? (confidence thresholds, modes, etc.)
-6. **Events** — Does it handle events? Need scheduling support?
-
-Generate the module YAML and Python entry point skeleton.
-
-## Module YAML Structure
+## The envelope that works
 
 ```yaml
-slug: my-module                       # Required: unique identifier
-orgSlug: my-org                       # Required: organization slug
-name: "My Module"                     # Required: display name
-type: module                          # Required: must be "module"
-description: "What this module does"  # Description
-lifecycle: production                 # production, development, deprecated
-version: "1.0.0"                      # Semantic version
-sourceUrl: "https://github.com/..."   # Source code URL
-
-metadata:
-  type: model                         # "model" or "skill"
-
-  # === Content (what files to include) ===
-  contents:                           # File glob patterns to include
-    - my_module/**.py
-  ignored_contents:                   # Patterns to exclude
-    - "**/__pycache__/**"
-    - "**/*.pyc"
-
-  # === Runtime (model type only) ===
-  moduleRuntimeRef: kodexa/base-cloud-model-runtime  # Runtime reference
-  moduleRuntimeParameters:            # Runtime-specific params (renamed from moduleRuntimeParameters)
-    module: my_module                 # Python module name
-    function: infer                   # Entry point function (default: infer)
-
-  # === Sidecars ===
-  moduleSidecars:                     # Additional modules loaded before execution (renamed from moduleSidecars)
-    - kodexa/kodexa-llm-model:1.0.0
-
-  # === Capabilities ===
-  eventAware: false                   # Handles events (needs handle_event function)
-  inferable: true                     # Can run inference
-  trainable: false                    # Supports training
-  supportsScheduling: false           # Can be scheduled via cron
-  state: TRAINED                      # Module state (TRAINED for shipped models)
-
-  # === Inference Options (user-configurable) ===
-  inferenceOptions:
-    - name: confidence_threshold
-      type: number
-      default: 0.85
-      description: "Minimum confidence score"
-    - name: mode
-      type: string
-      default: "auto"
-      description: "Processing mode"
-
-  # === Provider Info ===
-  provider: "My Company"
-  providerUrl: "https://example.com"
-
-overviewMarkdown: |                   # Detailed description (markdown)
-  ## My Module
-  Detailed documentation...
-```
-
-## Model vs Skill Comparison
-
-| Aspect | Model | Skill |
-|--------|-------|-------|
-| `metadata.type` | `model` | `skill` |
-| Language | Python | Any (files only) |
-| Runtime | Required (`moduleRuntimeRef`) | Not needed |
-| Entry point | Python function | N/A |
-| Execution | Server-side processing | Downloaded to `/home/kodexa/skills/` |
-| Use case | Document processing, ML, AI | Prompts, configs, knowledge files |
-
-## Inference Options Schema
-
-```yaml
-inferenceOptions:
-  - name: option_name                 # Required: parameter name
-    type: string                      # See "Option Types" below
-    default: "value"                  # Default value
-    description: "What this controls" # User-facing description
-    label: "Display Label"            # Optional display label
-    required: false                   # Whether required
-    showIf: "this.use_advanced"       # Conditional visibility (expression)
-    tabName: "Advanced"               # Group under a UI tab
-    developerOnly: true               # Hide unless developer mode enabled
-    possibleValues:                   # For select-style types
-      - { value: opt1, label: "Option 1" }
-      - { value: opt2, label: "Option 2" }
-```
-
-### Option Types
-
-| `type` | UI / behavior |
-|---|---|
-| `string` | Text input (combine with `possibleValues` for a select) |
-| `number` | Numeric input |
-| `boolean` | Toggle |
-| `text` / `textarea` | Multi-line text |
-| `markdown` | Markdown editor |
-| `label` | Document label picker |
-| `taxonomy` | Taxonomy picker |
-| `documentStore` | Document-store picker |
-| `documentStatus` | Document-status picker |
-| `taskStatus` | Task-status picker |
-| `taskTemplates` | Task-template picker |
-| `list` | Repeating list editor — pair with `listType` |
-
-### Lists and Nested Options
-
-Use `type: list` to render a repeating editor. Choose `listType` to control what each row contains:
-
-```yaml
-inferenceOptions:
-  # List of objects — each row is a sub-form defined by groupOptions
-  - name: actions
-    type: list
-    listType: object                  # object | <primitive option type>
-    label: "Label Actions"
-    groupOptions:
-      - name: type
-        type: string
-        label: Type
-        required: true
-        possibleValues:
-          - { value: add_label,    label: "Add Label" }
-          - { value: remove_label, label: "Remove Label" }
-      - name: label
-        type: label
-        label: "Label"
-        required: true
-
-  # List of preset values (e.g. allowed document statuses)
-  - name: allowed_statuses
-    type: list
-    listType: documentStatus          # picker per row
-    label: "Allowed Statuses"
-```
-
-## Python Entry Points
-
-### Basic Inference Function
-
-```python
-import logging
-from kodexa_document import Document
-
-logger = logging.getLogger(__name__)
-
-def infer(document: Document, confidence_threshold=0.85, status_reporter=None):
-    """Process a document and return it with extracted data."""
-    logger.info(f"Processing: {document.uuid}")
-
-    if status_reporter:
-        status_reporter.update("Analyzing document", status_type="analyzing")
-
-    # Process the document
-    content = document.content_node.get_all_content()
-
-    # Add labels, data objects, etc.
-    document.add_label("processed")
-
-    return document
-```
-
-### Event Handler
-
-```python
-def handle_event(event: dict, document: Document, assistant=None, status_reporter=None):
-    """Handle platform events (requires eventAware: true)."""
-    event_type = event.get("type")
-    logger.info(f"Handling event: {event_type}")
-
-    if status_reporter:
-        status_reporter.update("Processing event", status_type="processing")
-
-    return document
-```
-
-### Magic Parameter Injection
-
-Parameters are injected by name. Available parameters:
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `document` | Document | The document being processed |
-| `document_family` | DocumentFamily | The document family |
-| `model_base` | str | Path to model's base directory |
-| `pipeline_context` | PipelineContext | Pipeline execution context |
-| `model_store` | ModelStore | For persisting/loading artifacts |
-| `assistant` | Assistant | Associated assistant (for LLM) |
-| `assistant_id` | str | The assistant ID |
-| `project` | Project | Project this execution belongs to |
-| `execution_id` | str | Current execution ID |
-| `status_reporter` | StatusReporter | For live status updates |
-| `event` | dict | Triggering event (event handlers only) |
-
-### StatusReporter
-
-```python
-status_reporter.update(
-    title="Processing page 3/10",
-    subtitle="Extracting line items",
-    status_type="processing"  # thinking, searching, planning, reviewing,
-                               # processing, analyzing, writing, waiting
-)
-```
-
-## Deployment Defaults
-
-```yaml
-metadata:
-  deploymentDefaults:
-    deploymentType: CONTAINER          # CONTAINER, AWS_LAMBDA
-    minReplicas: 1
-    maxReplicas: 3
-    memoryAssigned: "1000"             # MB
-    serviceName: my-service
-    containerName: my-container
-    containerUrl: registry.example.com/image
-    childProcess: true
-    environment:
-      ENV_VAR: value
-```
-
-## Sidecar Pattern
-
-Sidecars are additional modules loaded into `sys.path` before your module executes.
-
-```yaml
-metadata:
-  moduleSidecars:
-    - kodexa/kodexa-llm-model:1.0.0   # LLM utilities
-    - kodexa/kodexa-langchain-module   # LangChain integration
-```
-
-Usage in Python:
-```python
-# Import from sidecar after it's loaded
-from kodexa_llm.utils import get_bedrock_client
-from kodexa_langchain.utils import create_chain
-```
-
-## Skill Module Example
-
-```yaml
-slug: my-llm-skills
-orgSlug: my-org
-name: "LLM Skills Pack"
-type: module
-description: "Prompts and tools for LLM processing"
-
-metadata:
-  type: skill
-  contents:
-    - prompts/**
-    - tools/**
-    - config.yml
-  ignored_contents:
-    - "**/*.pyc"
-```
-
-Directory structure:
-```
-my-llm-skills/
-  module.yml
-  prompts/
-    system.md
-    extraction.md
-  tools/
-    search.yml
-  config.yml
-```
-
-## Complete Model Example
-
-```yaml
+type: module                  # resource type — always "module"
 slug: invoice-extractor
 orgSlug: acme-corp
-name: "Invoice Data Extractor"
-type: module
-description: "Extracts structured data from invoice PDFs using AI"
-lifecycle: production
-version: "2.1.0"
+name: "Invoice Extractor"
+description: "Extracts header and line-item data from invoices"
+moduleType: model             # model | skill — THE discriminator, top level
+eventAware: false             # top level — real column
+supportsScheduling: false     # top level — real column
+deprecated: false
+publicAccess: false
 
 metadata:
-  type: model
+  moduleRuntimeRef: kodexa/base-model-runtime
+  moduleRuntimeParameters:
+    module: invoice_extractor  # Python package directory inside the ZIP
+    function: infer            # entry point (default: infer)
+  inferable: true              # metadata-only (no column)
   contents:
     - invoice_extractor/**.py
-    - invoice_extractor/templates/**
-  ignored_contents:
+  ignoredContents:
     - "**/__pycache__/**"
     - "**/*.pyc"
-    - "**/tests/**"
-
-  moduleRuntimeRef: kodexa/base-cloud-model-runtime
-  moduleRuntimeParameters:
-    module: invoice_extractor
-    function: infer
-
-  moduleSidecars:
-    - kodexa/kodexa-llm-model:1.0.0
-
-  eventAware: true
-  inferable: true
-  trainable: false
-  supportsScheduling: true
-
   inferenceOptions:
     - name: confidence_threshold
       type: number
       default: 0.85
-      description: "Minimum confidence for extraction"
-    - name: use_ocr
-      type: boolean
-      default: true
-      description: "Enable OCR for scanned documents"
-    - name: extract_line_items
-      type: boolean
-      default: true
-      description: "Extract individual line items"
-    - name: output_format
-      type: string
-      default: "json"
-      description: "Output format for extracted data"
-      possibleValues:
-        - value: json
-          label: "JSON"
-        - value: csv
-          label: "CSV"
-
-  provider: "Acme Corp"
-  providerUrl: "https://acme-corp.com"
-
-overviewMarkdown: |
-  ## Invoice Data Extractor
-
-  Extracts structured data from invoice PDFs including:
-  - Header fields (invoice number, date, vendor)
-  - Line items (description, quantity, price, total)
-  - Totals and tax calculations
-
-  ### Requirements
-  - PDF documents (scanned or digital)
-  - Base Cloud Model Runtime
-  - LLM Model sidecar for AI extraction
+      label: "Confidence threshold"
+      description: "Minimum confidence for an extracted value"
 ```
 
-## Common Mistakes
+Modules are **unversioned**. `ref` (`acme-corp/invoice-extractor`) and `uri`
+(`module://acme-corp/invoice-extractor`) are computed server-side — never author them, and never put
+a `:1.0.0` suffix on a `moduleRuntimeRef` or `moduleSidecars` entry (loaders parse it off and throw
+it away). `GET /api/modules/{id}` serves the record **flat**: `moduleRuntimeRef`, `contents`,
+`inferenceOptions` and friends come back at the top level with no `metadata` object. Writes accept
+either shape, so your YAML is not "losing" its metadata block when a GET looks different.
 
-| Mistake | Fix |
-|---------|-----|
-| Using legacy `modelRuntimeParameters:` / `modelSidecars:` | Renamed to `moduleRuntimeParameters:` / `moduleSidecars:`. Update both keys. |
-| Missing `moduleRuntimeRef` for model type | Models must reference a runtime |
-| Wrong `moduleRuntimeParameters.module` | Must match the Python package directory name |
-| Sidecar without version | Include version: `kodexa/sidecar:1.0.0` |
-| `eventAware: true` without `handle_event` function | Add `handle_event()` to your Python code |
-| `contents` patterns missing files | Use `**` for recursive glob: `my_module/**.py` |
-| Inference options not matching function params | Option `name` must match the Python function parameter name |
-| List option without `listType` | Set `listType: object` (with `groupOptions`) or `listType: <primitive>` |
-| Conditional option without `showIf` | Use `showIf: "this.<other_option_name>"` (boolean) or any expression |
+## Six things that fail silently
+
+**1. The model/skill switch is top-level `moduleType`, not `metadata.type`.**
+The API decodes the whole request body into the metadata struct after the nested block, so
+`metadata.type` is overwritten with the resource type (`"module"`) on every single write — it can
+never hold `model` or `skill`, and nothing reads it. The `module_type` column defaults to `model`,
+so a Python module survives the omission. **A skill pack does not**: without top-level
+`moduleType: skill` it stays `model` and gets offered as a runnable execution target.
+
+**2. `eventAware` and `supportsScheduling` must be top level.** They are real columns *and*
+metadata keys, and the column always wins on read. Nested under `metadata:` your value is lost and
+the module never appears in the scheduling picker (which filters the column). `inferable` is the
+opposite — metadata-only, filtered as `metadata.inferable`.
+
+```yaml
+eventAware: true            # ✅ column, honoured
+metadata:
+  eventAware: true          # ❌ shadowed by the column, value lost
+  inferable: true           # ✅ correct place for this one
+```
+
+**3. `ignoredContents`, not `ignored_contents` — and only under `metadata:`.** The wire format is
+camelCase everywhere except `entry_point` inside `actions[]`. `kdx apply` reads `ignoredContents`
+from `metadata:` alone, so a snake_case key *or* the same key at the top level means no exclusions
+apply and `__pycache__/`, `.pyc` and `tests/` all ship in the ZIP. (`contents` is lenient — top level or
+`metadata:` both work.) The pre-rename spellings `modelSidecars` and `modelRuntimeParameters` are
+still *read* by the runtimes for old rows, but they are no longer fields of the module model:
+author them today and the API drops them. Write `moduleSidecars` / `moduleRuntimeParameters`.
+
+**4. Only listed parameters are injected, and un-injected ones with no default crash the call.**
+The runtime hands your function exactly: the option values configured on the step (keyed by your
+option `name`s), plus `document`, `pipeline_context`, `model_base`, `execution_id`, `module_ref`,
+`project`, `assistant`, `assistant_id`, `model_data` and `training_id` (both always `None`), and
+`channel_id` / `message_id` / `task_id` / `event_type` when the dispatch carries them. Nothing else
+— notably **not** `document_family` (reach it via `pipeline_context.document_family`),
+`model_store`, `status_reporter`, or `event`. The runtime passes only the keys it has, so a
+parameter it does not supply falls back to your signature default — and a *required positional* it
+does not supply raises `TypeError`. Give every injected parameter a default. (`document` is always
+passed; on an event dispatch with no content object its value is `None`, which overrides your
+default — guard for it.)
+
+**5. `default:` in an option is a form-seeding hint, not the runtime default.** Studio seeds it
+into the step's option map only when the value is truthy, so `default: false`, `default: 0` and
+`default: ""` never reach the module at all. The value that actually applies at execution time is
+the one in your function signature. Mirror them.
+
+**6. `listType` — not `type: list` — switches on the list editor.** The renderer computes the
+effective type as `listType ?? type ?? "string"`. `type: list` alone matches no component and
+renders an "unknown option type" alert.
+
+## Implementation kinds
+
+| Kind | Declares | Entry point |
+|---|---|---|
+| Python package (default) | `moduleRuntimeParameters.module` / `.function` | `infer` (or the named function), falling back to `handle_event` |
+| Go-WASM plugin | `bridgeType: wasm`, `allowedHosts`, `build:` | the WASM export named `infer` |
+| Inline JavaScript | `moduleRuntimeRef: kodexa/go-scripting-runtime`, `scriptLanguage: javascript`, `script:` | the script body itself |
+| Agent skill pack | `moduleType: skill` at top level | none — the agent reads `SKILL.md` |
+
+```yaml
+# Go-WASM: kdx runs the build step, then packages the artifact
+metadata:
+  bridgeType: wasm                # "python" (default) | "wasm"
+  moduleRuntimeRef: kodexa/base-model-runtime
+  build:
+    - lang: go-wasm               # lang / workdir / output all required
+      workdir: .
+      output: plugin.wasm
+  contents:
+    - plugin.wasm                 # must land at the ZIP ROOT
+  allowedHosts:                   # wasm only; wildcards allowed
+    - "*.kodexa.example.com"
+```
+
+`build` runs on your machine at apply time (it shells out to your local `go`); it is not stored on
+the module record. The WASM bridge takes the first `.wasm` file **at the root** of the ZIP, and ZIP
+entry paths are relative to the manifest's own directory — so keep the manifest beside the plugin.
+
+Two WASM-only traps: export **`infer`** (the orchestrator stamps that entry-point name on every
+execution step, and `moduleRuntimeParameters.function` is a Python-bridge setting that never
+reaches the WASM bridge); and read your options out of the Extism config entry **`module_options`**
+(a JSON object) — the plugin SDK's `GetOption*` helpers look for a differently-named key and
+silently hand back the default you passed them.
+
+See `references/runtimes.md` for the runtime catalogue, the WASM plugin contract, inline-JS
+globals, skill-pack layout, and action-native modules.
+
+## Packaging and applying
+
+```bash
+kdx apply -f module.yml            # upserts metadata, runs build steps, zips contents, uploads
+kdx get modules --output json
+kdx get module invoice-extractor --download --download-path ./impl.zip
+kdx delete module invoice-extractor
+```
+
+A glob that matches nothing is a hard error ("no files found matching the patterns"). Use `**` for
+recursion (`invoice_extractor/**.py`). There is no separate deploy step.
+
+## Declared but inert
+
+Persisted and round-tripped; except where noted, nothing in the platform reads them:
+
+| Key | Note |
+|---|---|
+| `metadata.type` | Overwritten with `"module"` on every write; no reader. Use top-level `moduleType`. |
+| `moduleStatus` (`DRAFT`/`PUBLISHED`/`DEPRECATED`) | Stored, never gated on. `deprecated: true` is what actually hides a module from pickers. |
+| `metadata.state` | Free string; first-party modules write `TRAINED` out of habit. No reader. |
+| `metadata.stateHash` | Read, but server-managed: stamped on every implementation upload. Never author it. |
+| `metadata.baseDir` | No reader on the module record; `kdx apply` globs relative to the manifest's own directory. |
+| `metadata.optionTabs`, `messageTemplates`, `taxonomy`, `additionalTaxonOptions`, `taxonFeatures` | Round-trip slots that keep legacy rows intact. Nothing consumes them. |
+| Option `tabName` | Stored, but the option renderer draws one flat list — no tab grouping exists. |
+| Option `featureFlag`, `subType`, `aliases`, `displayProperties`, `overviewMarkdown`, `supportArticle` | Accepted by the API; no renderer consumes them. |
+
+Not fields at all — the API drops them on write: `version`, `lifecycle`, `sourceUrl`, `provider`,
+`providerUrl`, `providerImageUrl`, `overviewMarkdown`, `trainable`, `deploymentDefaults`. Put
+human-facing prose in `description`, which is a real column.
+
+## Common mistakes
+
+| Mistake | What happens |
+|---|---|
+| `metadata: { type: skill }` for a skill pack | `moduleType` stays `model`; the pack is offered as a runnable module. Set `moduleType: skill` at the top level. |
+| `eventAware` / `supportsScheduling` under `metadata:` | Column shadows the nested value; the module never shows in the scheduling picker. |
+| `ignored_contents:`, or `ignoredContents:` at the top level | Silently ignored — `__pycache__` and tests ship in the ZIP. It must be `metadata.ignoredContents`. |
+| `version:` or `lifecycle:` on a module | Dropped. Modules are unversioned; use `moduleStatus` / `deprecated`. |
+| `deploymentDefaults:` under a module | Dropped. CPU/memory/timeout belong to the model runtime, not the module. |
+| Sidecar or runtime ref with `:1.0.0` | Suffix is parsed off and discarded; it just contradicts every shipped manifest. |
+| `def infer(document, status_reporter):` | `TypeError` — never injected. Declare `status_reporter=None` and guard. |
+| `type: list` with no `listType` | Renders an "unknown option type" alert. Set `listType`. |
+| Skill pack ZIP with no root `SKILL.md` | The agent SDK walks one level deep and never discovers the skill. |
+| Go-WASM artifact nested in a subdirectory of the ZIP | Bridge fails with "no .wasm file found at root of ZIP archive". |
+| Go-WASM plugin exporting only `handle_event` or `process_document` | The bridge calls the export named `infer` and the call fails. Export `infer`. |
+| Option `name` not matching the function parameter | The value is passed under a key your signature does not declare, so it is dropped. |
+
+## References
+
+- `references/schema.md` — top-level fields and metadata keys, the option-type inventory, the
+  option `properties` bag, placeholder substitution, endpoints.
+- `references/runtimes.md` — runtime catalogue, injected parameters, WASM contract, inline-JS
+  globals, skill packs, action-native modules.
+- `references/examples.md` — worked manifests for all four kinds.
+
+Related skills: `kdx-cli` (apply, sync, secrets), `activity-plan` (an `EXECUTION` step references a
+module by `moduleRef` and supplies its option values), `assistant` (pipeline steps and
+`moduleRefs`), `prompt-template`.
