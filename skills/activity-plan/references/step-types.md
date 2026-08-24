@@ -43,6 +43,26 @@ org-level plan drive project-specific behaviour without baking in project UUIDs;
 placeholder is left literal and logged. `${secrets.NAME}` resolves from the org's secret store.
 `${orgSlug}` is not handled here — it was already expanded when the plan was saved.
 
+**Nothing in the plan names the resources the module works on.** There is no plan-level taxonomy,
+store or prompt key, no project-level default, and no inheritance from a resource merely bound to the
+project — the module reads what it needs out of `options`, so `options` is the only wiring. Omit an
+option the module wanted and the step still runs, still completes, and produces nothing.
+
+Read the contract off the module rather than copying `options` from an example: each entry under the
+module's own `options:` gives the `name` to write, a `type`, and often a `default`.
+
+```bash
+kdx run modules list-modules --filter "organization.slug:'acme-corp'" --pageSize 1000 -o yaml
+```
+
+| Option `type` | Value to write |
+|---|---|
+| `taxonomy`, `dataDefinition`, `documentStore`, `tableStore`, `modelStore` | the resource **`ref`** — `orgSlug/slug`. Not a UUID, not a `taxonomy://` URI |
+| `assistant` | the assistant **id** — the one picker that stores an id |
+| `password` | `"${secrets.NAME}"`, provisioned with `kdx secret set acme-corp NAME` |
+
+Full option-type inventory: the **module** skill, `references/schema.md`.
+
 An EXECUTION step emits no action, so nothing may route off it with `slug:action`.
 
 ## CREATE_TASK
@@ -127,6 +147,33 @@ createdOn, updatedOn}` — `status` is the project document-status slug or null.
 service-bridge calls per script, 10 s per bridge call, 10 MB response cap, and a 256 KB cap on any one
 `documents.*` / `tasks.*` payload. Do not call `close()` on a loaded document — the runtime closes and
 persists them itself when the step finishes.
+
+**`documents.get()` is metadata; `loadDocument()` is the data.** The record above carries no
+attributes and no data objects. Extracted data hangs off `loadDocument(familyId)`, and three things
+about that surface cost the most time — none of them checked, none inferable from the YAML:
+
+- **Rows of a repeating group are reached by path, not by descent.** `getChildren()` on the root data
+  object returns `[]` however many rows exist; rows are stored flat. Use
+  `findDataObjectsByPath('invoice/line_items')`, or `findFirstDataObjectByPath(...)` for a single
+  object. `select(...)` is a **content-node** selector and returns `[]` for a taxon path.
+- **A path here is the `/`-joined chain of taxon `name` values** — the same string a data form binds
+  as `tagPath`, and *not* the `externalName` chain a KEXL formula resolves (**data-definition**,
+  "Naming — four fields, four subsystems"). The two chains diverge the moment `externalName` is set.
+- **Writes are type-strict, and the error names the parser rather than your value.**
+  `setAttribute(name, value)` parses against the taxon's `taxonType` and fails the whole step on a
+  mismatch. A `DATE` taxon wants RFC3339 — stricter than what extraction itself stores — and refuses
+  a bare `YYYY-MM-DD`:
+  `setAttribute(invoice_date): date attribute parse: parsing time "2026-05-01" as
+  "2006-01-02T15:04:05Z07:00": cannot parse "" as "T"`.
+
+**Debugging a script.** `log.*` and `console.log` reach no CLI-visible sink —
+`kdx run activities logs --id <activity-id>` returns each step's skeleton with an empty `logs` array
+and exits 0, which reads as "the step logged nothing". The failure itself is retrievable:
+`kdx run activities get-activity --id <activity-id> -o json` puts the exception on
+`steps[].errorDetails.error` with its class, message and `<eval>:line:col`, and a `perDocument` step
+repeats it per document under `steps[].mappedOutput` — which tells you *which* document failed. Since
+a script fails whole and only its recognised return keys are published, put a diagnostic in an
+attribute or on the action object rather than in a log line.
 
 ## LLM
 

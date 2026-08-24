@@ -112,6 +112,10 @@ kdx run activities replan --id <activity-id>     # original is marked REPLANNED
 | `kdx validate` exited 0, but a key in the file has no effect after `kdx apply` | `validate` reports an unknown or misspelled key as a **warning**, not an error — no served schema sets `additionalProperties: false` | Read the `Result: N error(s), M warning(s)` line and the warning list; `--strict` does not change this (it only escalates *server* problem-details) |
 | `required flag(s) "pattern" not set` on `kdx document locate` | The search pattern is the `--pattern` flag, not a positional; the positional is the KDDB path | `kdx document locate doc.kddb --pattern "…"` |
 | `kdx run document-families data …` returned the family's metadata, not extracted values | `data` and `data-export` are different endpoints despite similar spec summaries | Use `data-export` for extracted data objects |
+| A list filter returned HTTP 500 `column "<name>" does not exist (SQLSTATE 42703)` | The filter compiles straight to SQL and that field is not a column on this resource | Read it as "wrong field for this type", not as an outage. Scoping fields are per-resource — see `commands.md` → Which field scopes which type. Probe with a bogus value: an empty result means the field exists |
+| An activity step failed and `kdx run activities logs` shows nothing | The logs endpoint returns each step's skeleton with an empty `logs` array; `log.*` from a SCRIPT step reaches no CLI-visible sink | Read `steps[].errorDetails.error` from `kdx run activities get-activity --id <id> -o json`; a `perDocument` step repeats it per document under `steps[].mappedOutput` |
+| A parser choked on `kdx … -o json` output with `Extra data` | An *Update Available* notice is appended after the JSON document when the version check fires | Decode the JSON prefix rather than the whole stream — see `commands.md` → Global flags |
+| An activity completed green but produced nothing | The document selection resolved to zero families — often a document store that is not bound to the project | Assert the document count first; see the **activity-plan** skill, "Validate, bind, start" |
 
 ## Common mistakes
 

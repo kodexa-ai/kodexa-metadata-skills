@@ -105,6 +105,13 @@ Names are matched case-insensitively; the platform convention is the lowerCamelC
 
 That is the whole list. Anything else is `unknown function: <name>` at evaluation time.
 
+**`round` ignores its second argument.** `round(x, 2)` does not round to two places — it rounds to a
+whole number, so a monetary or measured value silently loses its fractional part
+(`round(13524.37, 2)` evaluates to `13524`). `sum` and plain arithmetic keep full precision, so the
+wrapper is what destroys it. This bites hardest in `detailFormula`, where a rounded difference
+understates the size of the discrepancy in the message a reviewer reads. Leave the expression bare,
+and set display precision with `typeFeatures.decimalPlaces` instead.
+
 Two signatures are easy to get wrong. `sumifs(range, criteriaRange, criterion…)` and
 `countifs(range, criteriaRange, criterion…)` test **equality** against every criterion (all must
 match); they are not Excel criteria strings, so `"<=0"` is compared as the literal text `<=0` — use a
