@@ -86,6 +86,35 @@ do not author them. Mark a container with `group: true`, not a type.
 `SECTION` is a visual grouping that stores nothing: it is excluded from the extraction schema and
 from data grids, and the editor hides its Prompt, Formatting and Validations tabs.
 
+### A typed taxon coerces, it does not reject
+
+Giving a taxon a type does not make its value trustworthy. Extraction stores **two** representations
+of an attribute — the literal `value` / `stringValue`, and a typed companion (`decimalValue`,
+`dateValue`) — and they can disagree. A value the normalizer cannot parse still lands, with the typed
+companion at its zero value and `confidence` untouched:
+
+```json
+{ "path": "invoice/total_amount", "value": "<UNKNOWN>", "decimalValue": 0, "confidence": 1 }
+```
+
+A consumer reading `decimalValue` sees a confident `0`; a consumer reading `value` sees a non-number;
+nothing in the record marks it failed. The same shape applies to every typed taxon — an ambiguous
+separator, a number carrying a unit or a stray marker, a date missing a component. A partial date can
+land as year `0000` rather than as an error or an absence, which no "is the field populated" check
+will catch.
+
+The platform *can* surface this as an `Unable to Normalize Value` content exception at `WARNING`
+severity, but whether it fires depends on the extraction path in use, so never read its absence as a
+pass.
+
+Two consequences:
+
+- **Assert on the typed value, never on non-emptiness.** In a `data-export`, read `dateValue` /
+  `decimalValue` alongside the string form; "all fields populated" is not a passing test.
+- Where the source format is genuinely ambiguous, extract to a `STRING` taxon and derive the typed
+  one deterministically in a SCRIPT step (**activity-plan**) rather than asking the model to
+  normalize it.
+
 ## `valuePath`
 
 | Value | Meaning | Companion |

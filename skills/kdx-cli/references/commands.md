@@ -24,6 +24,13 @@ error-severity items (or warning-severity items under `--strict`); **1** for eve
 **0** on success. A problem body carrying **only warnings** prints them and still exits **0** — do
 not let a CI gate treat that as a clean run without also reading the output.
 
+**`-o json` is not a guarantee that stdout is only JSON.** When a newer release is available, `kdx`
+appends a human-readable *Update Available* notice **after** the JSON document, so parsing the whole
+stream fails with `Extra data: line N column 1`. It appears only when the version check fires, which
+makes it an intermittent break in anything that pipes `kdx` into a parser. Decode the JSON prefix and
+ignore the remainder — `json.JSONDecoder().raw_decode(stdout.lstrip())` in Python, or `head` the
+stream to the closing bracket — rather than assuming the whole of stdout parses.
+
 ## `kdx login <url>`
 
 Runs a browser (or device-code) authentication flow, mints an API key, saves it as a profile and
@@ -137,6 +144,27 @@ The `filter` query parameter is a SpringFilter expression:
 
 Strings and dates take single quotes, numbers are bare, booleans are `true`/`false`. Sort is
 `field:direction`, semicolon-separated for multiple: `sort=name:asc;createdOn:desc`.
+
+### Which field scopes which type
+
+**A filter compiles straight to SQL, so a field the table does not have fails at the database with
+HTTP 500** — `failed to count records: ERROR: column "<name>" does not exist (SQLSTATE 42703)`. Read
+that as "wrong field for this type", never as an outage.
+
+Neither organization field is universal. `organization.slug` is wired up only on data-definitions,
+data-stores, document-stores, modules, prompts, project-templates and the knowledge family;
+`organization.id` reaches further but still not everywhere. Types that carry no organization column
+are scoped through their parent instead:
+
+| Resource | Scope with | Fails with the column error |
+|---|---|---|
+| `document-families` | `store.id`, `storeRef`, `path` | `organization.id`, `project.id`, `slug` |
+| `tasks` | `project.id`, `project.slug`, `activity.*` | `organization.id` |
+| `activities` | `organization.id`, `project.id`, `projectId` | `project.slug` |
+| `content-exceptions` | — | `organization.id` |
+
+When in doubt, probe the field with a deliberately bogus value: an empty result means the field
+exists, the column error means it does not.
 
 ## `kdx describe <type> <uuid>` / `kdx delete <type> <uuid>`
 
@@ -355,6 +383,24 @@ kdx project create --template kodexa/invoice-processor --org acme-corp --name "I
 
 `--template`, `--org` and `--name` are all required. The server derives the project slug from the
 name and auto-suffixes collisions — read the created slug back from the output.
+
+**`--template` does not provision anything.** The CLI sends it as a `?templateRef=` query parameter
+and the create handler reads `projectTemplateRef` from the request **body** only, so what you get is
+a bare project with a template name attached: no stores, no document statuses, no task templates and
+no bindings — with no error, no warning and no log line (**project-template**). Every downstream
+symptom then presents as a binding problem: empty pickers, a 400 at activity start, a review form
+that never appears.
+
+To create a project the template actually materializes, send the body yourself. Operation names are
+derived rather than stable, so list them first:
+
+```bash
+kdx run projects                       # find this build's create operation
+kdx run projects <create-op> --body '{ … , "projectTemplateRef": "acme-corp/invoice-processing" }'
+```
+
+Omitting `projectTemplateRef` gives a deliberately bare project, which is a reasonable choice —
+provided you then bind its resources yourself (**project-resource**).
 
 ## `kdx intake`
 

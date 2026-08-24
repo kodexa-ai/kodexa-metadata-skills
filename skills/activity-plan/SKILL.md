@@ -7,7 +7,7 @@ description: "Use when writing or editing Kodexa ActivityPlan YAML — the org-s
 
 An **ActivityPlan** is an org-scoped directed graph of typed steps; starting one creates a project-scoped **Activity**
 plus a runtime step row per step. Plans live in `kdxa_activity_plans`, resolve as `activity-plan://acme-corp/invoice-intake`
-(unversioned), sync from an `activity-plans/` directory, and must be **bound to a project** before they run.
+(unversioned), sync from an `activity-plans/` directory, and must be **bound to a project** to run.
 
 ## Resource shape
 
@@ -101,15 +101,7 @@ edge matching only it fails the start.
 with a non-empty `action` matching one by `slug` (exact) or `name` (case-insensitive); `return {}`, or returning an
 action with nothing declared, fails the step. There is no `action()` function and no `ctx`/`context` global — the
 globals are `inputs`, `families`, `task`, `org`, `documents`, `tasks`, `knowledge`, `loadDocument`, `serviceBridge`, `llm`, `log`.
-
-```yaml
-- slug: classify
-  type: SCRIPT
-  perDocument: true
-  scriptBody: |
-    return { action: families[0].metadata.docType === 'receipt' ? 'receipt' : 'invoice' };
-  scriptActions: [{ name: Receipt, slug: receipt }, { name: Invoice, slug: invoice }]
-```
+Worked SCRIPT steps: `references/examples.md`.
 
 ## Per-document processing, routing and document status
 
@@ -161,6 +153,14 @@ guard the **full** path: `"$exists(steps.review.completedActionUuid) ? steps.rev
 - Start body: `projectId` + `activityPlanRef` required, plus optional `title`, `inputs`, `triggerKind`
   (default `MANUAL`), `documentFamilyIds`, `documentFamilyFilter`; success is 201. Also launchable from a
   Trigger, an intake script returning `{ activityPlan: 'invoice-intake', … }`, or a SCRIPT `nextActivity`.
+
+**What the run runs over is chosen at start, not by the plan — and selecting nothing is silent.**
+`documentFamilyIds` / `documentFamilyFilter` resolve once at start, then intersect with the **document
+stores bound to the project**; a family in an unbound store is dropped there with no error either side.
+An empty result is not a failure: every `perDocument` step fans out over zero documents, settles
+COMPLETED, and the activity finishes green — so "the plan ran and nothing came out" is more often an
+empty document set than a broken step. **Assert the document count before debugging a step.** Only a
+`documentFamilyGroups` entry with `required: true` fails loudly instead, with a 400 naming the group.
 
 ## Declared but inert
 

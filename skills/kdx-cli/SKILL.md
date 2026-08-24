@@ -7,17 +7,17 @@ description: "Use when running the Kodexa CLI (kdx) — logging in and managing 
 
 `kdx` is a kubectl-style CLI for the Kodexa platform. It discovers resource types from the server's
 OpenAPI document at runtime, so the available types follow the server you point at. Top-level
-commands: `login`, `config`, `api-resources`, `get`, `describe`, `delete`, `validate`,
-`apply`, `run`, `sync`, `document`, `knowledge`, `dataclasses`, `version`, plus the plugin groups
-`project`, `document-family`, `store`, `task`, `secret`, `intake`.
+commands: `login`, `config`, `api-resources`, `get`, `describe`, `delete`, `validate`, `apply`,
+`run`, `sync`, `document`, `knowledge`, `dataclasses`, `version`, plus the plugin groups `project`,
+`document-family`, `store`, `task`, `secret`, `intake`.
 
 References: `references/commands.md` (command + flag inventory), `references/sync-manifest.md`
 (sync-config, manifests, resource types, sigils), `references/troubleshooting.md` (symptom → fix).
 
 ## The `kdx apply` envelope
 
-**This is the canonical envelope every Kodexa metadata resource file carries.** Sibling skills
-describe a type's own fields; those fields sit **flat at the top level** beside these keys.
+**The canonical envelope every Kodexa metadata resource file carries.** A type's own fields sit
+**flat at the top level** beside these keys.
 
 ```yaml
 type: task-template          # resource type, kebab-case — picks the write path
@@ -35,7 +35,7 @@ kdx apply    -f invoice-review.yaml
 
 **A passing `kdx validate` is weak evidence:** an unknown or misspelled key is only a *warning* and
 still exits 0 — no schema the server serves sets `additionalProperties: false`. Only a missing
-**required** key or a type mismatch is an error. Read the warnings; never gate CI on its exit code.
+**required** key or a type mismatch is an error. Read them; never gate CI on the exit code.
 
 `kdx apply` is the strict one. Omitting a key fails it with an exact, unmissable error:
 
@@ -55,7 +55,6 @@ For a `module` it runs `metadata.build`, packages the **top-level** `contents:` 
 
 ```bash
 kdx login https://platform.kodexa.example.com --profile prod   # browser flow; mints + saves an API key
-kdx login https://platform.kodexa.example.com --device         # device-code flow, no local callback
 kdx config set-profile local --url http://localhost:8080 --api-key <key>   # or set one by hand
 ```
 
@@ -67,8 +66,8 @@ the wrong environment.
 Exit codes: a server problem-details response carrying **error**-severity items renders as a
 formatted list and exits **2**; every other failure (including `kdx validate` finding schema errors)
 exits **1**. A problem response carrying **only warnings prints them and exits 0** — a CI step
-gating on the exit code calls that a pass. `--strict` escalates those warnings to errors (exit 2);
-it has no effect on `kdx validate`.
+gating on the exit code calls that a pass. `--strict` escalates them to errors (exit 2), but has no
+effect on `kdx validate`.
 
 ## Reading resources
 
@@ -107,14 +106,16 @@ kdx run data-definitions list-taxonomies --filter "orgSlug:'acme-corp'"
 # RIGHT — organization.slug
 kdx run data-definitions list-taxonomies --filter "organization.slug:'acme-corp'" -o yaml
 
-# RIGHT — organization.id works everywhere
+# RIGHT here — but organization.id is NOT universal either
 kdx run data-forms list-data-forms --filter "organization.id:'00000000-0000-4000-8000-000000000003'"
 ```
 
 `organization.slug` is wired up only on data-definitions, data-stores, document-stores, modules,
-prompts, project-templates and the knowledge family. Everywhere else (data-forms, task-templates,
-task-statuses, activity-plans, triggers, service-bridges, intakes, assistants) resolve the org UUID
-once with `kdx get organizations -o json` and filter on `organization.id`.
+prompts, project-templates and the knowledge family. **`organization.id` reaches further but not
+everywhere**, and an unsupported filter field compiles to SQL and fails with HTTP 500 —
+`column "<name>" does not exist` — not a 400. Types with no organization column scope through their
+parent instead (`document-families` by `store.id`, `tasks` by `project.id`); the per-resource table
+is in `references/commands.md`.
 
 Operation names come from the path segment after the resource prefix, falling back to the sanitized
 `operationId` when that is empty — rarely the plural you expect (`list-data-stores` does not exist;
@@ -130,14 +131,10 @@ the file is looked up at `<metadata_dir>/<type-dir>/<slug>.yaml`. A path value s
 nonsense slug — validation only rejects empty strings, so nothing complains until push time.
 
 ```yaml
-# WRONG — the entry becomes the literal slug "forms/my-form.yml"; the lookup goes
-# under resources/data-forms/forms/ and finds nothing, so this deploys nothing
 organization:
-  data-form: [forms/my-form.yml]
-
-# RIGHT
-organization:
-  data-form: [invoice-review-form]
+  data-form: [invoice-review-form]     # RIGHT — a slug
+# WRONG — [forms/my-form.yml] becomes that literal string as the slug; the lookup goes
+# under resources/data-forms/forms/, finds nothing, and deploys nothing
 ```
 
 **2. `api_version:` defaults to `legacy`** — and so does *any* run without `--env`, whatever
@@ -176,6 +173,7 @@ These still exist and still run, so they look healthy. `references/troubleshooti
 | `kdx get stores` / `kdx describe store …` | Same prefix, same 404. Use `document-stores` / `data-stores` |
 | `kdx document-family data` | Calls a removed content-object export path → 404 |
 | `kdx task failures`, bulk `kdx task reprocess --project …` | Read a plan key the API renamed; **fail silently** — always "no failures found", exit 0 |
+| `kdx run activities logs` | Returns every step's skeleton with an **empty `logs` array** on every activity, in every state, and exits 0 — so it reads as "the step logged nothing". `log.*` and `console.log` from a SCRIPT step reach no CLI-visible sink; the exception is on `steps[].errorDetails.error` instead (**activity-plan**) |
 | `kdx sync pull` / `push` on a `workspace:` entry | Still a registry type, but the v2 backend refuses it: every one is skipped, the run exits 0, nothing moves. `/api/workspaces` itself is alive, so `kdx get workspaces` still works |
 
 ## Declared but inert
