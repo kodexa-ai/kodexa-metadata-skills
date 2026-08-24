@@ -1,6 +1,6 @@
 # Kodexa Metadata Skills
 
-A [Claude Code](https://claude.ai/claude-code) plugin providing skills for authoring [Kodexa platform](https://kodexa.ai) metadata — the YAML behind data definitions, activity plans, task templates, forms, modules, knowledge sets and the rest of the resource model.
+A skills plugin for [Codex](https://developers.openai.com/codex/) and [Claude Code](https://claude.ai/claude-code) for authoring [Kodexa platform](https://kodexa.ai) metadata — the YAML behind data definitions, activity plans, task templates, forms, modules, knowledge sets and the rest of the resource model.
 
 Each skill is written against the platform source: field names from the entity models, enum values from the constants that validate them, endpoints and status codes from the handlers, CLI flags from the command definitions. Where a field is accepted and then silently ignored, the skill says so rather than leaving you to find out.
 
@@ -30,6 +30,28 @@ Each skill is written against the platform source: field names from the entity m
 
 ## Installation
 
+### Codex
+
+Codex discovers repository skills under `.agents/skills`. This repository exposes the canonical
+`skills/` directory there, so launching Codex anywhere in this checkout makes the skills available:
+
+```bash
+git clone https://github.com/kodexa-ai/kodexa-metadata-skills.git
+cd kodexa-metadata-skills
+codex
+```
+
+To install the skills for use across repositories, ask Codex's built-in installer:
+
+```text
+$skill-installer Install all skills from https://github.com/kodexa-ai/kodexa-metadata-skills
+```
+
+The `.codex-plugin/plugin.json` manifest also packages the collection as a skills-only Codex plugin
+for local marketplace testing and distribution.
+
+### Claude Code
+
 ```bash
 claude plugin marketplace add kodexa-ai/kodexa-metadata-skills
 claude plugin install kodexa-metadata-skills
@@ -53,7 +75,13 @@ Ask for what you want and the relevant skill loads on its own:
 > Add an approval step to this activity plan
 ```
 
-You can also invoke one explicitly:
+You can also invoke one explicitly. In Codex:
+
+```text
+$data-definition
+```
+
+In Claude Code:
 
 ```
 > /kodexa-metadata-skills:data-definition
@@ -61,9 +89,13 @@ You can also invoke one explicitly:
 
 ## How the skills are organised
 
-Each skill follows the progressive-disclosure layout:
+Each skill follows the progressive-disclosure layout, with host-specific manifests pointing to the
+same canonical files:
 
 ```
+.agents/skills -> ../skills  # repository-local Codex discovery
+.codex-plugin/plugin.json    # Codex plugin package
+.claude-plugin/plugin.json   # Claude Code plugin package
 skills/<name>/
   SKILL.md              # ≤200 lines — always loaded
   references/*.md       # loaded on demand
@@ -80,7 +112,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for where truth lives, the house rules th
 Two things worth knowing before you edit:
 
 - **Verify against platform source, never against another document.** Most errors here got in by being copied forward without re-checking.
-- **Bump `version` in `.claude-plugin/plugin.json` in the same PR as any change under `skills/`.** That field pins the plugin — installed users receive nothing until it moves.
+- **Bump `version` in both plugin manifests in the same PR as any change under `skills/`.** Keep `.codex-plugin/plugin.json` and `.claude-plugin/plugin.json` on the same version so installed users on both hosts receive the update.
 
 ## Documentation
 
