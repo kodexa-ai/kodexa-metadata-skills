@@ -1,0 +1,38 @@
+{
+  "name": "kodexa-metadata-skills",
+  "version": "2.1.0",
+  "description": "Skills for authoring Kodexa platform metadata: data definitions, activity plans, task templates, triggers, data forms, modules, knowledge sets, intakes, service bridges and more",
+  "author": {
+    "name": "Kodexa",
+    "email": "support@kodexa.com",
+    "url": "https://kodexa.ai"
+  },
+  "homepage": "https://developer.kodexa.ai",
+  "repository": "https://github.com/kodexa-ai/kodexa-metadata-skills",
+  "license": "Apache-2.0",
+  "keywords": [
+    "kodexa",
+    "metadata",
+    "document-processing",
+    "data-definitions",
+    "activity-plans",
+    "kdx"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Kodexa Metadata Skills",
+    "shortDescription": "Author and debug Kodexa metadata",
+    "longDescription": "Create, review and troubleshoot Kodexa metadata using source-aligned guidance for data definitions, activity plans, task templates, forms, modules, stores, knowledge resources and the kdx CLI.",
+    "developerName": "Kodexa",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Write"
+    ],
+    "websiteURL": "https://developer.kodexa.ai",
+    "defaultPrompt": [
+      "Create a Kodexa data definition for purchase orders.",
+      "Diagnose why this Kodexa activity plan is failing.",
+      "Review this Kodexa metadata YAML for invalid or inert fields."
+    ]
+  }
+}

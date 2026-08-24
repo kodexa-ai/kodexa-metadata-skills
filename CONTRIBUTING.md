@@ -90,6 +90,10 @@ so it fires on the right tasks and not on adjacent ones.
 claude plugin validate . --strict
 ```
 
+For Codex, validate `.codex-plugin/plugin.json` with `$plugin-creator` and run the
+`$skill-creator` validator over every directory under `skills/`. The Codex plugin and skill
+validators check different layers; run both.
+
 Then, by hand:
 
 - every changed factual claim traced to platform source
@@ -97,12 +101,12 @@ Then, by hand:
 - `SKILL.md` still within budget, with the load-bearing facts inside it
 - a grep for customer names, internal hosts, ticket ids and private repo paths
 
-**Bump `version` in `.claude-plugin/plugin.json` in the same PR as any change under `skills/`.**
-That field pins the plugin — installed users receive nothing until it moves. A correct fix that
-never ships is not a fix.
+**Bump `version` in both `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json` in the same PR
+as any change under `skills/`.** Keep the versions equal. Each field pins the package installed by
+that host — a correct fix that never ships is not a fix.
 
-The version lives in `plugin.json` only. The marketplace entry deliberately omits it so there is
-no second place to forget.
+The version lives in each host's `plugin.json`. Marketplace entries deliberately omit it so there
+is no third place to forget.
 
 ## A known problem: this documentation exists more than once
 
