@@ -8,8 +8,17 @@ description: "Use when authoring or editing a Kodexa document store or data stor
 ## Two resources, two tables, three schemes
 
 A **document store** holds document families — the uploaded file and every processed version of it.
-A **data store** holds the data objects extraction writes. Both are first-class **org-scoped**
-resources with their own YAML file, endpoint and table, not just a block in a project template.
+Both are first-class **org-scoped** resources with their own YAML file, endpoint and table, not just
+a block in a project template.
+
+**A data store is no longer where extracted data lives.** Data objects are held in the KDDB
+document and read from the document family — `kdx run document-families data-export --id <family>`
+is the export — so a project needs **no** data store bound for extraction or review to work, and
+binding one changes nothing. Project-template materialization still creates a
+`{project.id}-extracted-data` store, and older projects still carry one, which is why the resource
+and its `storeType` guidance below are documented; treat it as legacy rather than as part of a new
+project's setup. If a review form is empty, a missing data store is not the cause — see
+**data-definition**, "Taxon `id`".
 
 | | Document store | Data store |
 |---|---|---|

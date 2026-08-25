@@ -51,6 +51,21 @@ line (`--type task-template --org-slug acme-corp`) rather than hand-editing. `kd
 speaks the v2 (Go) API; on a legacy (Java) deployment it fails and points you at `kdx sync push`.
 For a `module` it runs `metadata.build`, packages the **top-level** `contents:` globs, and uploads.
 
+**`unchanged` is not proof the server matches your file.** Apply's change detection skips some
+fields entirely, and when they are the *only* difference it reports `unchanged` / `already up to
+date` and sends no request at all:
+
+| Field | Consequence |
+|---|---|
+| taxon `id` on a `data-definition` | Apply neither mints ids nor sends authored ones — and a data form cannot bind an id-less taxon, so every field in the review form renders `No data`. See **data-definition**, `references/schema.md`. |
+| `version` on a `data-form` | Editing `1.0.0` → `"2"` is a no-op; the stored value stays `1.0.0`. |
+
+Where you need one of these to land, PUT the record instead:
+
+```bash
+kdx run data-definitions update-taxonomies --id <dd-id> --body @definition.json
+```
+
 ## Getting connected
 
 ```bash

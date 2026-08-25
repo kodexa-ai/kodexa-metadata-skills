@@ -80,6 +80,14 @@ An EXECUTION step emits no action, so nothing may route off it with `slug:action
       costCentre: "${project.options.dataProperties.costCentre}"
 ```
 
+`taskData.priority` is where an activity-created task's priority comes from. The referenced task
+template's own `metadata.priority` is **not** read on this path, so a template carrying
+`priority: 3` still produces tasks at priority `0` unless the step sets it.
+
+A `CREATE_TASK` step sits at **`RUNNING`** for as long as its task is open, so the activity never
+reports `COMPLETED` while a human still has work to do. That is the finished state for the automated
+part of the plan — poll the last automated step, not the activity, when waiting for processing.
+
 `taskData.title`, `.description` and top-level string values in `.properties` understand exactly four
 placeholders: `${activity.title}`, `${project.id}`, `${project.name}`,
 `${project.options.dataProperties.<key>}`. Nothing else resolves — `{{ .inputs.x }}` stays literal in

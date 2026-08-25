@@ -164,6 +164,7 @@ Persisted and round-tripped, sometimes editable in the UI, but nothing in the pl
 | taxon-level `lexicalRelations` | Editable in the Classification tab, but only `selectionOptions[].lexicalRelations` reaches the prompt. |
 | `eventSubscriptions[].dependsOn` | A pre-regex shorthand. The runtime indexes subscriptions on `on` alone and never expands `dependsOn`, so write the `on` regex yourself. |
 | taxon `dataPath` (+ `valuePath: DATA_PATH`) | Never read. The taxon still goes to the extractor, with no prompt. |
+| `typeFeatures.skipExtraction` | Declared as "leave the taxon out of extraction", and `kodexa/llm-taxonomy-model` extracts the taxon anyway — observed populating reviewer-input taxons, including a `SELECTION` holding the reviewer's own conclusion, on every document of a corpus. The prompt is the lever that works: give the taxon a `semanticDefinition` telling the model the field is computed after extraction and to return no value. |
 | `valuePath: EXTERNAL` / `EXPRESSION` / `REVIEW` | `EXTERNAL`/`EXPRESSION` are removed value paths (the Groovy/SpEL evaluators are gone); `REVIEW` is legacy and absent from the runtime enum. All three save cleanly, then the field is never extracted, never normalized and gets no prompt. `REVIEW` is **not** a template mechanism — that is `typeFeatures.allowTemplating`. |
 | conditional-format `name`/`formula`/`style`/`color`/`background`/`icon` | Round-trip compatibility only; the evaluator reads `condition`, the renderer reads `properties`. |
 | `apiVersion:` in the file | Present in the shipped templates; `kdx apply` does not read it. |
@@ -172,6 +173,8 @@ Persisted and round-tripped, sometimes editable in the UI, but nothing in the pl
 
 | Mistake | What happens |
 |---|---|
+| Applying a hand-authored taxonomy whose taxons have no `id` | Extraction works, the activity completes green and the data export looks perfect — and **every field in a data form renders `No data`**. `kdx apply` never mints taxon ids, and once ids are the only difference it reports `unchanged` and sends nothing, so they have to go through a direct PUT. `references/schema.md`, "Taxon `id`". |
+| An unquoted short `selectionOptions` id — `no`, `yes`, `on`, `off` | Applies through `kdx` (Go YAML 1.2 reads them as strings) and then any Python round-trip of the file rewrites it as `false` (PyYAML, YAML 1.1), after which the server rejects the whole write. Quote option ids. |
 | No `type:`/`orgSlug:` in the file and no `--type`/`--org-slug` | The CLI refuses before contacting the server. |
 | `cardinality: {min, max}` on a group | Hard decode failure — the request is rejected outright. |
 | Leaf taxons at the root, outside any group | No shared data object, so bare `{Sibling}` references between them do not resolve. Put one `group: true` root above everything. |

@@ -27,7 +27,10 @@ top-level keys, so those are accepted and dropped.
 ## Taxon
 
 ```yaml
-- name: line_total                # required — attribute tag; feeds the derived `path`
+- id: 3f1c0b7e-9a2d-5c81-...      # REQUIRED IN PRACTICE — a taxon with no id cannot be bound
+                                  # by a data form, and `kdx apply` never mints one. See
+                                  # "Taxon `id`" below.
+  name: line_total                # required — attribute tag; feeds the derived `path`
   externalName: LineTotal         # required — the formula/JSON-Schema key
   label: Line Total               # display; snake_cased into the extraction property name
   description: ""                 # human documentation; never seen by the extraction model
@@ -73,6 +76,41 @@ catch-all for unknown keys, so anything misfiled there is stored without error a
 the document viewer tags the whole line node instead of the selected words. Everything else in the
 array is ignored. See SKILL.md's "Declared but inert" table for the fields with no consumer at all.
 
+## Taxon `id` — required in practice, and `kdx apply` will not give you one
+
+Every taxon carries an `id`. It is **not** server-managed at taxon level (unlike the taxonomy's own
+`id`), nothing generates it for you, and **a data form cannot bind a taxon that has none**: every
+`v2:attributeEditor` in the form renders the literal text `No data`.
+
+The failure is silent end to end. Extraction runs, the activity completes, and
+`kdx run document-families data-export --id <family>` returns a complete data object tree with the
+right `path` and `taxonomyRef` — because the export reads the document, which stores attributes by
+path. Only the review surface resolves through the taxon, and only it breaks. The form's own chrome
+(tabs, panels, labels, alerts, grids) mounts normally, which makes it read as a form bug. In a
+working form an *empty* attribute renders as an input box with a placeholder; `No data` is what the
+editor emits when it cannot resolve a row at all.
+
+Measured across one deployment: every taxonomy created in the Studio or materialised from a project
+template had an id on **all** of its taxons and bound correctly; three taxonomies applied from
+hand-authored YAML had **zero** and bound nothing.
+
+**Authoring the ids is necessary but not sufficient**, because `kdx apply` does not send them. Once a
+file differs from the server only by taxon ids, apply reports `unchanged` / `already up to date` and
+issues no request at all. They land only through a direct PUT:
+
+```bash
+kdx run data-definitions update-taxonomies --id <dd-id> --body @definition.json
+```
+
+Derive the ids rather than randomising them — a UUID5 over `<taxonomy-slug>/<taxon path>` is stable,
+so re-authoring is idempotent and a re-apply is a genuine no-op:
+
+```python
+import uuid
+NS = uuid.UUID("6f9619ff-8b86-d011-b42d-00c04fc964ff")
+taxon["id"] = str(uuid.uuid5(NS, f"{slug}/{path}"))   # path = the `/`-joined `name` chain
+```
+
 ## `taxonType`
 
 Fourteen wire values: `STRING`, `DATE`, `DATE_TIME`, `NUMBER`, `BOOLEAN`, `CURRENCY`, `URL`,
@@ -107,12 +145,26 @@ The platform *can* surface this as an `Unable to Normalize Value` content except
 severity, but whether it fires depends on the extraction path in use, so never read its absence as a
 pass.
 
+### A DATE taxon may return nothing at all
+
+The failure above is a bad value landing. The other failure mode is **no attribute at all**, and it
+is the common one for `taxonType: DATE`: on one corpus every DATE taxon came back absent, on every
+document, through two prompt rewrites — while the STRING taxons around them extracted cleanly, from
+documents printing the date unambiguously (`From: 01 April 2026 00.01 Local Standard Time`).
+
+So for dates, treat the STRING-companion pattern below as the **default**, not the
+ambiguous-format remedy: capture the printed text into a STRING taxon and derive the typed date in a
+SCRIPT step. That also makes prose periods resolvable at all — `"12 months at 1 May 2026"` has no
+second date for any prompt to find.
+
+Note that `setAttribute` on a DATE taxon needs an RFC3339 timestamp; a bare `YYYY-MM-DD` is rejected.
+
 Two consequences:
 
 - **Assert on the typed value, never on non-emptiness.** In a `data-export`, read `dateValue` /
   `decimalValue` alongside the string form; "all fields populated" is not a passing test.
-- Where the source format is genuinely ambiguous, extract to a `STRING` taxon and derive the typed
-  one deterministically in a SCRIPT step (**activity-plan**) rather than asking the model to
+- Where the source format is ambiguous — and always for DATE — extract to a `STRING` taxon and derive
+  the typed one deterministically in a SCRIPT step (**activity-plan**) rather than asking the model to
   normalize it.
 
 ## `valuePath`
@@ -167,10 +219,10 @@ leaves the value untouched. The original value is preserved separately.
 | Key | Values / default | Effect |
 |---|---|---|
 | `expected` | bool, `false` | adds this property to the extraction schema's `required` list |
-| `skipExtraction` | bool, `false` | leave the taxon out of extraction |
+| `skipExtraction` | bool, `false` | intended to leave the taxon out of extraction — **not honoured by `kodexa/llm-taxonomy-model`**, which extracts it anyway. Suppress with the prompt instead (SKILL.md, "Declared but inert"). |
 | `cardinality` | `single` \| `multiple`, group taxons only | one object vs an array. **Always set it.** |
 | `embedded` | bool, `false` | extract inside the parent's call rather than as its own chunk |
-| `chunkingStrategy` | `document`, `page`, `firstNPages`, `record`, `classifiedContent` (default), `pageClassifiedContent`, `consecutiveClassifiedContent`, `groupClassifiedContent` | how the document is split for the model. The editor exposes it only for non-embedded taxons. |
+| `chunkingStrategy` | `document`, `page`, `firstNPages`, `record`, `classifiedContent` (default), `pageClassifiedContent`, `consecutiveClassifiedContent`, `groupClassifiedContent` | how the document is split for the model. The editor exposes it only for non-embedded taxons. **A heading whose value is long enough to straddle a page break can come back empty under the default `classifiedContent`** — observed on two multi-sentence headings whose immediate neighbours extracted every time; `document` fixes it. |
 | `nPages` | int | pages taken by `firstNPages` |
 | `promptStrategy` | `lines`, `layout` (default), `imageAndBoundingBoxes`, `boundingBoxes` | how content is presented to the model |
 | `classificationStrategy` | `none`, `dataElement` (default), `dataElementAndChildren`, `feature`, `pageLabel` | how content is classified before extraction |
@@ -281,7 +333,7 @@ For `taxonType: SELECTION`. Canonical key order: `id`, `label`, `value`, `descri
 
 | Key | Notes |
 |---|---|
-| `id` | opaque row key used by the editor. **Not** the stored value. |
+| `id` | opaque row key used by the editor. **Not** the stored value. **Quote it** — see below. |
 | `label` | the extraction schema constrains the model to the set of enabled option labels, so this is what gets extracted |
 | `value` | what the form stores when it must differ from the label; the UI stores `value` if present, else `label` |
 | `description` | appended to the option in the extraction prompt |
@@ -289,6 +341,21 @@ For `taxonType: SELECTION`. Canonical key order: `id`, `label`, `value`, `descri
 | `isConditional` + `conditionalFormula` | show the option only while the KEXL formula evaluates to `true`; an evaluation error leaves the option visible |
 | `disabled` | string flag; `"true"` disables the option |
 | `lexicalRelations` | `{type, value, weight}`. Types: `SYNONYM`, `ANTONYM`, `HYPERNYM`, `HYPONYM`, `ABBREVIATION`, `VARIANT` — the editor offers the first two and only those two are glossed into the prompt. **One entry per term.** |
+
+### Quote the option `id`
+
+`kdx` parses YAML with Go's `yaml.v3`, which follows the YAML 1.2 core schema: `no`, `yes`, `on` and
+`off` are ordinary strings. PyYAML — and therefore most Python tooling around a metadata repo —
+follows YAML 1.1, where all four are booleans. A short unquoted option id is the collision:
+
+```yaml
+selectionOptions:
+  - { id: no, label: Notice }      # applies fine through kdx; PyYAML reads it as `false`
+```
+
+The file applies cleanly, and then any Python round-trip rewrites it as `id: false`, after which the
+server rejects the whole write with `cannot unmarshal bool into Go struct field
+SelectionOption...id of type string`. Quote every option id and the ambiguity goes away.
 
 ### Dynamic options
 

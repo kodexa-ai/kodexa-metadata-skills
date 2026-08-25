@@ -94,6 +94,10 @@ metadata:
   form pane simply never appears — a warning is logged and nothing else happens.
 - `availablePanels` overrides workspace panel visibility for that form, using the panel ids above.
 
+**A supplied title wins over AI naming.** An activity-plan `CREATE_TASK` step that sets
+`taskData.title` gets exactly that title on every task and the naming prompt never runs — so a plan
+that wants AI-named tasks must omit `taskData.title` and let the template's `title` be the fallback.
+
 ## `metadata.documentFamilyGroups[]`
 
 Groups of documents the reviewer attaches. These drive the **New Task wizard** — the upload zones,
