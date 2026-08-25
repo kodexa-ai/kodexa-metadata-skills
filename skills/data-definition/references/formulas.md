@@ -217,6 +217,22 @@ detail.
 
 For an interpolated message use `concat(...)`; there is no `${}` or `{{ }}` substitution here.
 
+## A FORMULA taxon may not materialise at all
+
+Separately from precision: a `valuePath: FORMULA` taxon can simply produce nothing. Two
+`PERCENTAGE` taxons summing a sibling repeating group resolved to `0` on one run and to **no
+attribute at all** on the next, with both a relative reference
+(`sum({../WrittenLines/WrittenLinePercentage})`) and an absolute one
+(`sum({/Root/WrittenLines/WrittenLinePercentage})`); on an earlier corpus the same pattern produced
+correct values on 2 of 7 documents and `0` on the other five, with an identical taxonomy and
+pipeline.
+
+The consequence for validation is the one that matters: **inline the sum in the rule rather than
+referencing a computed taxon.** A rule written as `abs(sum({Lines/Amount}) - {Order}) < 0.01`
+behaves; the same rule reading a `computed_total` taxon passes on every document where that taxon
+came back `0`, which looks like a clean run and is not one. Treat a FORMULA taxon as a review-UI
+convenience and never as an input to anything that must be right.
+
 ## Why a broken formula is expensive
 
 Formulas are not validated when the definition is applied. A parse error or an unknown function

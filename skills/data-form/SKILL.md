@@ -98,6 +98,10 @@ Rules that fail silently when broken:
 - **`tagPath`, not `taxon`.** `taxon` is the V1 property name. A `v2:*` node
   with `props.taxon` leaves `tagPath` undefined and the editor throws while
   computing its label — the node renders nothing.
+- **The taxon at that path must carry an `id`.** An editor resolves through the
+  taxon, so a taxonomy applied from YAML with no taxon ids binds nothing and
+  every field reads `No data` — however correct the `tagPath` is. See
+  **data-definition**.
 - **Only five components accept `children`:** `v2:panel`, `v2:tabs`, `v2:row`,
   `v2:col`, `v2:serviceBridgeView`. Children nested under any other component
   are dropped without a warning.
@@ -174,6 +178,7 @@ are disabled, logged, or returned as a 400:
 
 | Mistake | What happens |
 |---|---|
+| **Every field renders `No data`** while the data export is full | Not a form problem. The taxons have no `id`, and a form cannot bind an id-less taxon — see **data-definition**, `references/schema.md`, "Taxon `id`". The chrome mounting normally is what makes this read as a form bug. |
 | `card:*` components under `nodes` | Resolves to a V1 card with no `card`/`viewId` → broken or empty render |
 | `props.taxon` on a `v2:*` node | `tagPath` undefined → editor throws, node disappears |
 | `kodexa.data...` inside a script | `ReferenceError`, swallowed → silent no-op. Use the `bridge` parameter |

@@ -136,3 +136,22 @@ kdx run activities replan --id <activity-id>     # original is marked REPLANNED
   missing required keys (errors) before a write reaches the server.
 - **Reading only `kdx validate`'s exit code.** Unknown and misspelled keys are warnings; exit 0
   means "nothing fatal", not "the file is right".
+
+## `kdx delete task` / `kdx delete activity` are not listed, and both work
+
+The `task` plugin group documents only `failures` and `reprocess`, and neither tasks nor activities
+appear as deletable resources — but both resolve through the generic delete path:
+
+```bash
+kdx delete task <task-id>
+kdx delete activity <activity-id>
+```
+
+Between runs of a demo or test project this is the only practical way to clear the queue. Delete the
+tasks before the activities, and unbind a resource before deleting it (a bound resource is a
+`409 resource is linked to N project(s)`).
+
+**An activity payload does not carry the ids of the tasks its `CREATE_TASK` steps created**, so you
+cannot map task → activity from the activity JSON. The link is a `task-document-families` row (task →
+document family) plus the task's own `plan` block. Matching "orphan" tasks against activity JSON
+silently matches nothing — and deleting on that basis deletes everything.
