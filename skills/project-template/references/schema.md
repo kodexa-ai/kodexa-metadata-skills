@@ -10,8 +10,10 @@ below is dropped silently, and most `ref:` failures only produce a warning.
 | `slug` | Required. Unique per org; the template is addressed as `project-template://<org>/<slug>`. |
 | `orgSlug` | Owning organization slug. `kdx sync push` injects the resolved organization id itself — do not author `organizationId:`. |
 | `type` | File discriminator. `project-template`, `projectTemplate`, `project-templates` and `projectTemplates` are all accepted, and the value is stored verbatim. When absent the server defaults it to `project-template`. May be omitted entirely if you pass `kdx apply --type`. |
-| `name` | Display name in the template picker. |
-| `description` | The only other field the picker renders, and what its search box matches on. |
+| `name` | Display name in the template picker. Describes the template; it is not copied into the new project. |
+| `description` | The only other field the picker renders, and what its search box matches on. Not copied into the new project either. |
+| `projectNamePlaceholder`, `projectDescriptionPlaceholder` | Hint text in the New Project dialog's name and description inputs, which open empty. When unset the dialog shows the template's `name` / `description` as the hint. **Create** stays disabled until a name is typed. |
+| `launchActivity` | One of the template's `activityPlans`, in any ref form they accept (`${orgSlug}/plan`, `activity-plan://…`, a bare slug). After **Create** the UI opens the project, then the New Activity dialog on that plan's details step; the user still clicks **Start**. Resolved at create and returned once, on the create response only, as `launchActivityPlanId` — so only the UI's create flow launches anything; `kdx` and API creates just receive the id. A ref that does not resolve, or names a plan not in `activityPlans`, logs a warning: the project is created, and the UI tells the user the activity could not be opened. |
 | `version` | Free-form string. Not used for resolution — refs are unversioned. |
 | `publicAccess` | `true` grants read access to the template outside the owning organization. |
 | `deleteProtection`, `deprecated` | Booleans. |
@@ -183,6 +185,19 @@ triggers:
 
 `slug`, `name` and `activityPlanRef` are the only trigger fields that take `${...}` substitution.
 
+## `serviceBridges:`
+
+Ref-only, like `activityPlans:` — binds existing org service bridges to the new project:
+
+```yaml
+serviceBridges:
+  - ref: "${orgSlug}/vendor-lookup"
+```
+
+The binding is what lets module and agent code running in the project call the bridge; there is no
+org-level fallback. An entry without `ref:` (an inline bridge) is skipped with a warning, and so is a
+ref that does not resolve. `name`, `slug` and `description` are accepted and unused.
+
 ## `assistants:`
 
 ```yaml
@@ -321,9 +336,24 @@ orchestrator's fan-out project-ensure path: an ensure whose `dataProperties` omi
 that is `required: true` and has no `default` is rejected with `requires dataProperties [...]`. The
 regular New Project form enforces required options client-side only.
 
-Activity plans read the values at run time as `${project.options.dataProperties.<name>}`, substituted
-anywhere inside a string (task titles, properties). An unset or non-scalar key resolves to the **empty
-string**, not to a literal — a missing value produces a quietly wrong title rather than an error.
+Activity plans read the values at run time as `${project.options.dataProperties.<name>}`. In CREATE_TASK
+`taskData` (titles, descriptions, properties) an unset or non-scalar key resolves to the **empty string**,
+not to a literal — a missing value produces a quietly wrong title rather than an error. In an AGENT step's
+`prompt` it **fails the step** unless written `${project.options.dataProperties.<name>?}`, and it renders at
+all only for an option shared with agents:
+
+```yaml
+dataOptions:
+  - name: vendor_name
+    type: string
+    showOnPopup: true
+    properties:
+      agentVisible: true      # a YAML boolean; the string "true" does not share it
+```
+
+Password-type and `developerOnly` options are never shared, whatever the flag says. The definitions are
+read from the project's **current** template at run time (falling back to the copy made at create), so
+unlike everything else here, adding `agentVisible` later reaches existing projects.
 
 Values a user enters at project-create are overlaid on top of the template's `properties` /
 `dataProperties` seeds, so the form wins over the template per key.
