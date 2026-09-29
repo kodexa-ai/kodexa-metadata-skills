@@ -223,7 +223,7 @@ Discovery writes `"2"`; treat the key as documentation.
 
 ## Syncable resource types
 
-22 entries. The **manifest key** column is the type's URI scheme, which is what discovery writes
+24 entries. The **manifest key** column is the type's URI scheme, which is what discovery writes
 and what `kdx sync pull --discover` will hand you. Push order is ascending, so dependencies land
 before their dependents.
 
@@ -246,10 +246,12 @@ before their dependents.
 | `project` | `project` | org | `projects/` | 60 |
 | `workspace` | `workspace` | project | `workspaces/` | 63 (never syncs on v2 — see below) |
 | `knowledge-set` | `knowledgeset` | org | `knowledge-sets/` | 65 |
+| `announcement` | `announcement` | org | `announcements/` | 70 |
 | `task-template` | `tasktemplate` | org (legacy: project) | `task-templates/` | 65 |
 | `task-status` | `taskstatus` | org (legacy: project) | `task-statuses/` | 65 |
 | `assistant` | `assistant` | project | `assistants/` | 70 |
 | `knowledge-item` | `knowledgeitem` | project | `knowledge-items/` | 70 |
+| `landing` | `landing` | org | `landings/` | 72 |
 | `trigger` | `trigger` | project | `triggers/` | 75 |
 
 Traps in that table:
@@ -264,6 +266,11 @@ Traps in that table:
   against a plan that already exists.
 - **`knowledge-set` is 65, after projects (60)**, so a project-level knowledge set can resolve its
   project.
+- **`landing` is 72**, after every type a landing references (projects, project templates, activity
+  plans, task templates and statuses). Pushing it only **stages** the definition. Activation is the
+  manifest's separate `landing:` block (below). On `--dry-run`, landings validate through
+  `POST /api/landings/validate` rather than `?validate=only`. Resources in the same push are sent as
+  `staged`, so references to them are not reported missing.
 - **`task-template` and `task-status` are org-scoped on v2 but project-scoped on legacy.** On a
   legacy backend they stay inline under `projects.<slug>` in the manifest, and `task-template`
   lands under `projects/<slug>/task-templates/` on disk. `task-status` is skipped on legacy.
@@ -280,6 +287,37 @@ Traps in that table:
   file opts out. There is no `workspace://` resolver scheme and `workspace` is not a valid
   project-resource binding type.
 
+## Activating a landing: the top-level `landing:` block
+
+```yaml
+manifest_version: "2"
+metadata_dir: resources
+organization:
+  landing: [workflow]                # the RESOURCE, like any other type
+landing:                             # the ACTIVATION, a separate top-level block
+  ref: landing://${org}/workflow
+```
+
+| Block | After the push |
+|---|---|
+| omitted | the organization's assignment is **left exactly as it is** |
+| `landing: {ref: null}` | the assignment is cleared, and the standard Workflow tabs return |
+| `landing: {ref: landing://…}` | that landing's current revision is activated |
+| `landing: {}` | **manifest load error**: `ref` is required |
+
+Activation is the last phase of a push (and a deploy). It is **skipped, with a printed reason,
+leaving the previous landing active** when any resource in the push failed, or when the push was
+filtered (`-f`). `kdx landing set` is the deliberate way to activate after a partial push.
+Re-activating the revision that is already active is a no-op. On `--dry-run`, a landing the same
+push would create reports `would activate after this push creates it`. When several manifests in a
+target declare the block, the last one wins.
+
+`kdx sync pull` exports the **latest** (staged) revision by default. `--landing-revision active`
+exports the frozen snapshot the organization is actually showing instead. If the resource has moved
+on, the file starts with a `# divergence:` comment giving both revisions. With no landing active, the
+landing is skipped with a warning. Pull never writes the `landing:` block; add it by hand. The
+server-managed `localization` catalog and `textKeys` are excluded from pull/push comparison.
+
 ## Portability: `${org}`
 
 Pull rewrites the org slug to `${org}`; push substitutes the destination org slug back.
@@ -291,6 +329,9 @@ The contract is anchored on `<orgSlug>/`, plus the bare `orgSlug` field:
 | `${org}/invoice-taxonomy` | `acme-corp/invoice-taxonomy` |
 | `orgSlug: ${org}` | `orgSlug: acme-corp` |
 | a string that is exactly `${org}` | `acme-corp` |
+
+In a **landing**, `${org}` is substituted only in reference fields (`refs`, `taskTemplateRefs`,
+`activityPlanRef`, `projectTemplateRef`). The same text inside a title or label is left alone.
 
 `${org}-suffix` is **malformed** — the substitution is anchored on `${org}/`, so it never fires.
 Unlike the sigils below, this one is caught: after substitution, push scans the payload for any

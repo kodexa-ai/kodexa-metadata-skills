@@ -17,6 +17,7 @@ Each skill is written against the platform source: field names from the entity m
 | **kdx-cli** | The `kdx` CLI — profiles and login, resource CRUD, `validate`/`apply`, `run`, and sync/deploy with manifests |
 | **knowledge-system** | Knowledge sets, feature types, item types and feature instances — `featureExpression` trees, computed slugs, options |
 | **label** | Org labels — no `slug` column, so `kdx apply` refuses them and they push only through `kdx sync push` |
+| **landing** | Organization Workflow home pages — book, conveyor and control-room views; why saving stages and activation freezes a snapshot; bindings, the field and metric catalogs, required vs optional; the task-template `workPolicy` behind take-next |
 | **metadata-envelope** | The `slug`/`name`/`orgSlug`/`type` envelope shared by twelve org-scoped types — the flatten rule, what a slug is really checked against, `changeSequence`, the computed `ref`/`uri`, and repo layout |
 | **module** | Python, Go-WASM and inline-JavaScript model modules plus agent skill packs — `moduleType`, runtime refs, sidecars, inference options |
 | **project-resource** | Making an org-scoped resource usable in a project — the binding model, and the silent failures when a binding is missing |
