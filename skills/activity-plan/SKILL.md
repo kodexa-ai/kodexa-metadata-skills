@@ -164,8 +164,10 @@ guard the **full** path: `"$exists(steps.review.completedActionUuid) ? steps.rev
   else `POST /api/activities` returns **400**:
   `activity-plan "<slug>" is not bound to project <id>; create a project-resource binding first`.
 - Start body: `projectId` + `activityPlanRef` required, plus optional `title`, `inputs`, `triggerKind`
-  (default `MANUAL`), `documentFamilyIds`, `documentFamilyFilter`; success is 201. Also launchable from a
-  Trigger, an intake script returning `{ activityPlan: 'invoice-intake', … }`, or a SCRIPT `nextActivity`.
+  (default `MANUAL`), `documentFamilyIds`, `documentFamilyFilter`; success is 201. `activityPlanRef` is a
+  bare slug or `activity-plan://acme-corp/invoice-intake` — **`acme-corp/invoice-intake` without the scheme
+  is looked up as a slug and 404s** `ActivityPlan not found`. Also launchable from a Trigger, an intake
+  script returning `{ activityPlan: 'invoice-intake', … }`, or a SCRIPT `nextActivity`.
 
 **What the run runs over is chosen at start, and selecting nothing is silent.** `documentFamilyIds` /
 `documentFamilyFilter` resolve once, then intersect with the **document stores bound to the project** (an
