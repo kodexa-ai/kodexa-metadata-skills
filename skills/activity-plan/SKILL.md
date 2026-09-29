@@ -26,7 +26,8 @@ steps: [...]
 ```
 
 A required `inputOptions` entry missing (or empty) in `inputs` fails the start: `missing required inputs: <names>`.
-`inputsSchema` only renders the Studio start form — never validated server-side — so declare every input in both.
+A non-empty `inputsSchema` is **enforced at start** — inputs that fail it return 400 `invalid activity inputs: …` —
+and then `inputOptions` types are not checked; without one, each `inputOptions` value is type-checked. Declare every input in both.
 
 ## The step envelope is FLAT and keyed by `type`
 
@@ -184,7 +185,6 @@ Persisted, round-tripped, present in existing YAML — and read by nothing.
 | `waitForCompletion` (CREATE_TASK) | never read; the step always waits for its task to reach a DONE status |
 | `disableCache` (BRIDGE_CALL) | plumbed to the request then ignored; there is no caching layer |
 | `outputMapping` (BRIDGE_CALL) | accepted in YAML but never carried onto the runtime step, so `bridgeActions` never resolve and action edges off a BRIDGE_CALL never fire. Branch instead with a `conditionExpr` on the downstream steps, reading the always-present `steps.<slug>._statusCode` |
-| `inputsSchema` | drives the Studio start form only |
 | `approverRole`, `approvalCriteria`, all of APPROVAL | the step settles SKIPPED before anyone can act |
 | CREATE_TASK inline `actions:` | folded into `taskData.actions`, never rendered, never routable |
 | `badges[]` without `promote: true` | stays on the step; only promoted badges reach the activity |
