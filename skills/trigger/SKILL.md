@@ -152,7 +152,7 @@ The started activity carries `triggerKind` (`DOCUMENT_LOCKED`, `SCHEDULE`, …) 
 | `metadata` | Free-form. Stored and returned; nothing interprets it. |
 | `eventKind: task_created` / `activity_completed` / `manual` | Accepted and stored — never dispatched. |
 
-`inputMapping` is the opposite case: fully honoured, but the UI's trigger editor does not expose it. Author it in YAML or via the API.
+`inputMapping` is the opposite case: fully honoured, and the Studio trigger editor shows it as a JSON field below the event filter. There, type the JSONata as a JSON string or as `{"expr": "..."}`; a bare object is the literal-values form (see Common mistakes).
 
 ## Common mistakes
 
