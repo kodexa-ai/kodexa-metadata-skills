@@ -73,8 +73,12 @@ keys**, siblings of `typeFeatures` — never members of it. `typeFeatures` has a
 catch-all for unknown keys, so anything misfiled there is stored without error and never read.
 
 `nodeTypes` has exactly one consumer: when its first entry is `"line"`, hand-tagging this taxon in
-the document viewer tags the whole line node instead of the selected words. Everything else in the
-array is ignored. See SKILL.md's "Declared but inert" table for the fields with no consumer at all.
+the document viewer labels the whole line. Selecting any word on the line labels every word of
+that line, and the value is the line's full text.
+- From platform 2026.13 the label is written on the line's words, the way extraction writes its own
+  labels. Earlier versions wrote it on the line node itself.
+- Labels made before the change keep their line tags.
+- Everything else in the array is ignored. See SKILL.md's "Declared but inert" table for the fields with no consumer at all.
 
 ## Taxon `id` — required in practice, and `kdx apply` will not give you one
 
