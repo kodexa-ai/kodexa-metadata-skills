@@ -26,10 +26,10 @@ If you want work to actually happen, author an `activity-plan` and a `trigger`; 
 
 | What you want | Author this |
 |---|---|
-| Something to start when an event happens | A **trigger** (`kdxa_triggers`) pointing at an activity plan. The six accepted event kinds are `task_created`, `task_status_changed`, `activity_completed`, `manual`, `document_locked`, `knowledge_set_updated`; filtering is a JSONata `eventFilter`. See the `trigger` skill. |
+| Something to start when an event happens | A **trigger** (`kdxa_triggers`) pointing at an activity plan. Seven event kinds are accepted, but only `task_status_changed`, `document_locked`, `knowledge_set_updated` and `schedule` are ever dispatched; filtering is a JSONata `eventFilter`. See the `trigger` skill. |
 | A module to actually run over a document | An **activity-plan** step of `type: EXECUTION` — the only path that builds a runnable pipeline |
 | Branching, tasks, approvals, scripts, a service-bridge HTTP call | An **activity-plan**. The step discriminator key is `type:` (not `kind:`); accepted values are `EXECUTION`, `BRIDGE_CALL`, `CREATE_TASK`, `SCRIPT`, `APPROVAL`, `LLM`, `AI_PROMPT`, `AGENT` |
-| Cron / periodic work | Not available in-platform. `schedule` is rejected as a trigger event kind and there is no scheduled-jobs API. Drive it from outside. |
+| Cron / periodic work | A **schedule trigger**: `eventKind: schedule` with `triggerMetadata: {cron, timezone, jitterSeconds}`, pointing at an activity plan. It fires once per slot, once after missed runs, and has Run now. Never an assistant schedule — see the `trigger` skill. |
 | A named project-scoped record that *declares* taxonomy refs, a module pipeline or agent config — configuration that persists but does not run | An **assistant** (this skill) |
 | An identity for plan-run executions | The auto-provisioned system Task Assistant — never author one |
 | To read runtime state | The rows are `Activity` (`kdxa_activities`) and `Step` (`kdxa_steps`); an activity's runtime field is `lifecycleState`, not `status` |
@@ -170,7 +170,7 @@ omitting the key opts out of the check.
 |---|---|
 | `connections:` | Removed. No entity, no endpoint, no template field; the backing rows were deleted. Migrate to an activity-plan plus a trigger. |
 | `stores:` | Removed. The backing table was dropped; the store-list endpoint is in the spec but has no route and 404s. Scope stores with project-resource bindings and step options instead. |
-| `schedules:` / `schedulable:` | Removed. No column, no scheduled-jobs API, and `schedule` is not a valid trigger event kind. |
+| `schedules:` / `schedulable:` | Removed. No column and no scheduled-jobs API; assistant schedules never ran. A project template carrying `assistants[].schedules[].cronExpression` is refused when the template is written. Author a schedule trigger instead. |
 | `assistantDefinitionRef:` | Parses, never copied onto the created assistant. There is no assistant-definition entity or endpoint. |
 | `loggingEnabled:` / `deleteLoggingOnSuccess:` / `definition:` | Columns dropped or never existed on the model. Silent no-op. |
 | `options.properties:`, `options.data_store:`, `options.write_back_to_store:`, any other flat `options` key | Not one of the six typed `options` keys, so dropped on write. Common in older templates. `kdx` even rewrites sigils inside `options.properties` on pull/push — that is formatting, not support. |

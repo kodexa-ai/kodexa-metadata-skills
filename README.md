@@ -26,7 +26,7 @@ Each skill is written against the platform source: field names from the entity m
 | **store** | Document stores and data stores — the asymmetric flatten that silently drops inner keys written flat, `storeType`/`storePurpose`, and the binding gate |
 | **task-status** | The workflow states tasks move through — `statusType`, locking, and which mechanics fail open versus closed |
 | **task-template** | Human review/approval tasks — action buttons and their transitions, attached forms, document groups, AI naming |
-| **trigger** | Starting an activity plan when a platform event fires — event kinds, JSONata filters and input mapping |
+| **trigger** | Starting an activity plan when a platform event fires or on a cron schedule — event kinds, schedule triggers, JSONata filters and input mapping |
 
 ## Installation
 

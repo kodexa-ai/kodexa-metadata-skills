@@ -20,21 +20,24 @@ Every top-level key that exists:
 ```
 id ref template orgSlug slug type name description version publicAccess imageUrl icon overviewMarkdown
 provider providerUrl providerImageUrl deleteProtection deprecated checksum extensionPackRef helpUrl
-stores assistants taxonomies dataForms documentStatuses taskStatuses attributeStatuses taskTemplates
-activityPlans triggers knowledgeSets tags options memory linkedProjects
+projectNamePlaceholder projectDescriptionPlaceholder launchActivity stores assistants taxonomies
+dataForms documentStatuses taskStatuses attributeStatuses taskTemplates activityPlans serviceBridges
+triggers knowledgeSets tags options memory linkedProjects
 ```
 
 Keys widely seen in older templates and docs that this rule kills:
 
 | Key | What happens |
 |---|---|
-| `scheduledJobs:` | Vanishes. There is no such field and no cron scheduler in the platform. |
+| `scheduledJobs:` | Vanishes. There is no such field. Timed work is a `schedule` trigger under `triggers:`. |
 | `assistants[].connections:` | Vanishes. Assistants carry a flat `subscription:` string instead. |
 | `options.taskOptions.showTakeNext` | Vanishes. `taskOptions` has exactly one field, `showNewTask`. |
 | unknown keys under `options:` or `assistants[].options:` | Vanish — both are closed structs too (e.g. `confidence_threshold`, `write_back_to_store`). |
 
-Nested collection items are closed structs as well. The one thing that does raise an error is a
-**known** key holding a wrong-typed value (`deleteProtection: "yes"`) — a 400 `invalid metadata field`.
+Nested collection items are closed structs as well. Two things do raise a 400 when the template is
+written: a **known** key holding a wrong-typed value (`deleteProtection: "yes"`, `invalid metadata
+field`), and a schedule that cannot run — any `assistants[].schedules[].cronExpression`, or a
+trigger `triggerMetadata` that is invalid on a `schedule` trigger or present on any other kind.
 
 ## Rule 2 — a template is only ever applied at project CREATE
 
@@ -59,8 +62,8 @@ POST /api/projects
 
 | Outcome | Which cases |
 |---|---|
-| **Warn + skip** — project is created "successfully" with the resource missing | any unresolvable `ref:`/`templateRef:` (store, taxonomy, data form, task template, activity plan); `activityPlans:` entry with no `ref:`; **any trigger the DB rejects** (bad `activityPlanRef`, invalid `eventKind`, malformed `eventFilter`); any store, taxonomy, assistant or knowledge-set create failure |
-| **Hard fail — whole create rolls back, no project** | template not found; document-status create; task-status lookup/create; inline data-form create; inline task-template create |
+| **Warn + skip** — project is created "successfully" with the resource missing | any unresolvable `ref:`/`templateRef:` (store, taxonomy, data form, task template, activity plan); `activityPlans:` entry with no `ref:`; a trigger entry with no `slug`; any store, taxonomy, assistant or knowledge-set create failure |
+| **Hard fail — whole create rolls back, no project** | template not found; document-status create; task-status lookup/create; inline data-form create; inline task-template create; **any trigger that fails validation** (a 400 naming it); a schedule trigger over the cap (409 `TRIGGER_SCHEDULE_LIMIT`) |
 
 A typo in a `ref:` produces a project that looks fine and is quietly missing a store or a trigger —
 always verify what was actually bound after creating from a new template.
@@ -128,12 +131,11 @@ activityPlans:                           # REF-ONLY. An entry without `ref:` is 
   - ref: "activity-plan://${orgSlug}/invoice-review-flow"
 
 triggers:                                # yes, triggers CAN be embedded here
-  - slug: review-on-lock
-    name: "Review a locked invoice"
-    eventKind: document_locked
-    eventFilter: { expr: "$exists(documentFamilyId)" }
+  - slug: weekly-review-sweep
+    name: "Weekly review sweep"
+    eventKind: schedule                  # triggerMetadata is copied verbatim — no ${...} inside it
+    triggerMetadata: { cron: "0 6 * * MON", timezone: America/New_York, jitterSeconds: 900 }
     activityPlanRef: "activity-plan://${org}/invoice-review-flow"
-    enabled: true
 ```
 
 Field tables per collection: `references/schema.md`. Worked templates, `options:`, troubleshooting: `references/examples.md`. Standalone store YAML — the flat wire shape, `storeType` values and the legacy `type: store` remapping — is the **store** skill. The **project** YAML is a syncable resource of its own, and its `documentStatuses:` and `projectTemplateRef` behave nothing like the template's: `references/project-yaml.md`.
@@ -156,18 +158,18 @@ The status is then bound to the project as a project-resource; see the **task-st
 
 ## Triggers embedded in a template
 
-A trigger fires an activity plan, so **the plan must also be listed in `activityPlans:`** — a trigger
-whose plan is not bound to the project is created but never runs; the start-activity call rejects it
-with HTTP 400 "not bound to project". Embedded-trigger specifics:
+A trigger fires an activity plan, so **the plan must also be listed in `activityPlans:`** — otherwise
+it is created but never runs (`binding_missing` per event, `PLAN_UNBOUND` per slot). Specifics:
 
 - `activityPlanRef` must be a full, unversioned `activity-plan://<org>/<slug>` URI with **no leftover
-  `${...}`** after substitution. It is validated on write, and a failure only warns — the trigger is
-  silently not created. (In `activityPlans:` the scheme is optional; here it is mandatory.)
-- No `projectId` (server sets it) and no `triggerMetadata` (not on the embedded shape).
-- Re-applying is idempotent on `(project, slug)`.
-- **Only `task_status_changed`, `document_locked` and `knowledge_set_updated` are actually emitted
-  today.** `task_created`, `activity_completed` and `manual` pass validation, persist, and never fire.
-  `schedule`, `document_arrived` and `data_extracted` are rejected at write time.
+  `${...}`** after substitution. (In `activityPlans:` the scheme is optional; here it is mandatory.)
+- **A trigger that fails validation fails the project create** with a 400 naming it — it is no longer
+  skipped. A duplicate slug, or a re-apply, is a no-op per `(project, slug)`.
+- No `projectId` (the server sets it). `triggerMetadata` is copied **verbatim** — no `${...}`.
+- Schedule triggers count against the caps (5 per project, 500 per organization); `trigger:schedule`
+  is not checked against the user creating the project — the template is their authority.
+- Only `task_status_changed`, `document_locked`, `knowledge_set_updated` and `schedule` are
+  dispatched. `task_created`, `activity_completed` and `manual` persist and never fire.
 
 Event payload keys, `eventFilter`/`inputMapping` shapes and the standalone trigger YAML are in the **trigger** skill.
 
@@ -187,7 +189,7 @@ Round-tripped and visible in existing templates and the UI, but read by nothing:
 | `attributeStatuses:` | No attribute-status table, entity or endpoint exists; never materialized. |
 | `tags:` | Round-tripped in the template body, but nothing in the platform reads them and projects have no tags field. |
 | `stores[].description`, `templateRef`, `files`, `hasImage`, `showThumbnails`, `showStoreInLabeling`, `highQualityPreview`, `allowDataEditing`, `documentProperties`, `labelExpressions` | Only `storeType`, `storePurpose`, `deleteProtection`, `name` and `slug` reach a created store. A store has no field at all for most of the rest; `documentProperties` and `labelExpressions` exist on a document store only as inert legacy keys (**store** skill). `templateRef` stamps an internal column nothing reads — it copies no documents, metadata or configuration. |
-| `assistants[].assistantDefinitionRef`, `stores`, `schedules`, `loggingEnabled` | Never copied to the created assistant; no such columns exist. |
+| `assistants[].assistantDefinitionRef`, `stores`, `schedules`, `loggingEnabled` | Never copied to the created assistant; no such columns exist. A `schedules[].cronExpression` is refused at write. |
 | `assistants[].subscription` | Written onto the created assistant, but no current platform service evaluates it — confirm before relying on event-driven assistants. |
 | `dataForms[].templateRef`, `dataForms[].description` | Never read; `templateRef` here silently falls into the inline-create branch. |
 | `taxonomies[].taxonomyType`, `taxonomies[].description` | Dropped for inline taxonomies; set them on a standalone data-definition and bind with `ref:`. |

@@ -59,6 +59,14 @@ triggers:
     eventFilter: { expr: "$exists(documentFamilyId)" }
     activityPlanRef: "activity-plan://${org}/invoice-review-flow"
     enabled: true
+  - slug: weekly-review-sweep
+    name: "Weekly review sweep"
+    eventKind: schedule
+    triggerMetadata:                     # copied verbatim; checked when the template is written
+      cron: "0 6 * * MON"
+      timezone: America/New_York
+      jitterSeconds: 900
+    activityPlanRef: "activity-plan://${org}/invoice-review-flow"
 
 assistants:
   - name: "Prepare Document"
@@ -110,16 +118,17 @@ stores:
 
 ## Embedded triggers — event kinds and filters
 
-Only three event kinds are actually emitted today. The other three accepted values persist and never
-fire, which looks identical to a working trigger until you notice nothing runs.
+Four event kinds are dispatched. The other three accepted values persist and never fire, which looks
+identical to a working trigger until you notice nothing runs.
 
 | `eventKind` | Fires today | Payload keys the filter sees |
 |---|---|---|
 | `task_status_changed` | yes | `eventKind`, `taskId`, `projectId`, `organizationId`, `documentFamilyId` |
 | `document_locked` | yes | `eventKind`, `documentFamilyId`, `projectId`, `organizationId`, plus `taskId` / `storeId` when present |
 | `knowledge_set_updated` | yes | `eventKind`, `projectId`, `organizationId` |
+| `schedule` | yes, on each cron slot and on Run now | `eventKind`, `triggerId`, `projectId`, `organizationId`, `scheduledFor` |
 | `task_created`, `activity_completed`, `manual` | **no** — accepted, stored, never dispatched | — |
-| `schedule`, `document_arrived`, `data_extracted` | rejected at write time | — |
+| `document_arrived`, `data_extracted` | rejected | — |
 
 Each payload also has the event's own extra fields flattened on top, so filters address everything as
 flat names.
@@ -137,14 +146,20 @@ The third form is rewritten on write into `{"expr": "taskTemplateRef = \"invoice
 An absent, null, `{}` or `""` filter means "match every event". An empty `inputMapping` passes the raw
 event payload through as the activity inputs.
 
-The **trigger** skill covers the standalone `triggers/*.yaml` form, JSONata patterns and the event
-contract in full.
+A `schedule` trigger needs `triggerMetadata` — `cron` (five fields), `timezone` (an explicit IANA
+zone) and `jitterSeconds` (0 to 3600). The template is refused when it is written if that definition is
+invalid, or if any other kind carries a `triggerMetadata`. No `${...}` substitution runs inside it.
+Template schedule triggers count against the caps of 5 per project and 500 per organization.
+
+The **trigger** skill covers the standalone `triggers/*.yaml` form, JSONata patterns, the event
+contract and schedule behaviour (missed runs, DST, Run now) in full.
 
 ## Common mistakes
 
 | Mistake | What actually happens |
 |---|---|
-| `scheduledJobs:` for cron work | Silently dropped. There is no scheduler; time-based automation is not available from a template. |
+| `scheduledJobs:` for cron work | Silently dropped — there is no such field. Embed a `schedule` trigger under `triggers:`. |
+| `assistants[].schedules[].cronExpression` | The template is refused at write with a 400. Assistant schedules never ran; use a `schedule` trigger. |
 | `connections:` under an assistant | Silently dropped. Use the flat `subscription:` string — and note nothing evaluates it yet. |
 | `options.taskOptions.showTakeNext` | Silently dropped. `showNewTask` is the only field. |
 | `${project.slug}` in a slug or ref | Left as literal text, producing a slug containing `${project.slug}`. Use `${project.id}`. |
@@ -157,9 +172,11 @@ contract in full.
 | A `documentStatuses` entry with a `statusType` outside `UNRESOLVED`/`RESOLVED` | Decodes to `UNRESOLVED` with no error. |
 | An inline taxon with only a `label` | `name`, `externalName` and `valuePath` are the required taxon fields; a label-only taxon is created but addresses nothing. |
 | `taxons:` or `cards:` written as a mapping | Decodes to zero taxons / cards; the error is swallowed and the resource is created empty. |
-| Embedding a trigger whose plan is not in `activityPlans:` | The trigger is created but never runs; start-activity rejects the unbound plan with HTTP 400. |
-| Leftover `${...}` in a trigger's `activityPlanRef` | Write-time validation error — and it only warns, so the trigger is silently not created. |
-| `eventKind: task_created` | Persists, never fires. Use `task_status_changed`, `document_locked` or `knowledge_set_updated`. |
+| Embedding a trigger whose plan is not in `activityPlans:` | The trigger is created but never runs: each event fails `binding_missing`, each schedule slot records `PLAN_UNBOUND`. |
+| Leftover `${...}` in a trigger's `activityPlanRef` | The trigger fails validation, so the project create fails with a 400 naming it. |
+| `${org}` inside `triggerMetadata` | Not substituted — it is copied verbatim. |
+| A sixth template schedule trigger for one project | The project create fails with 409 `TRIGGER_SCHEDULE_LIMIT`. |
+| `eventKind: task_created` | Persists, never fires. Use `task_status_changed`, `document_locked`, `knowledge_set_updated` or `schedule`. |
 | Editing a template and expecting existing projects to change | Materialization is create-only. Re-create the project, or edit its resources directly. |
 | Creating a project with `?templateRef=` — including `kdx project create --template` | Ignored: the create handler reads the body only, so you get a bare project with none of the template's resources. |
 | Expecting `kdx sync push` of a project YAML to apply its template | It strips `projectTemplateRef` on create and restores it afterwards as lineage only. |
@@ -176,9 +193,11 @@ each expected resource actually exists and is bound:
 1. `POST /api/projects` with `projectTemplateRef` in the body.
 2. List the project's bound resources and confirm one entry per `ref:` you authored — a missing entry
    means that ref did not resolve.
-3. List the project's triggers and confirm one per `triggers:` entry.
+3. List the project's triggers and confirm one per `triggers:` entry. An invalid trigger now fails the
+   create outright; an entry with no `slug` is still skipped with only a log line.
 4. Confirm no store, taxonomy or data form was created empty (the swallowed-unmarshal cases).
 
 If the create returns an error instead, it came from one of the hard-fail cases: template not found,
-a document- or task-status write, an inline data-form create, or an inline task-template create. The
-project is rolled back entirely, so fix and retry rather than hunting for a partial project.
+a document- or task-status write, an inline data-form create, an inline task-template create, an
+invalid trigger, or a schedule trigger over the cap. The project is rolled back entirely, so fix and
+retry rather than hunting for a partial project.
