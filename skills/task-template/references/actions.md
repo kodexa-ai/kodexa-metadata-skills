@@ -118,12 +118,62 @@ Omit either key to keep the status default. The document-family default is **on*
 
 Every action is also disabled while the task is locked, loading, or another action is running.
 
-### Comment capture
+### Dialog — ask the reviewer before the action runs
+
+An action may open a dialog when pressed (platform `feat/task-action-dialog`, 2026-10): a short
+form that collects values for taxon attributes and/or a comment, **before any mutation**.
+Cancel, `Esc` or the overlay aborts the action and leaves the task untouched; submit writes the
+values onto the task's data objects and the action then runs as usual.
+
+```yaml
+properties:
+  statusSlug: rejected
+  dialog:
+    title: "Reject this bill"                 # default: the action label
+    description: "Pick the reject code."       # optional
+    submitLabel: "Reject"                      # default: the action label
+    fields:
+      - kind: attribute                        # the default kind
+        taxon: { taxonomySlug: freight-agents, taxonPath: Response/CassRejectCode }
+        label: "Cass reject code"              # default: the taxon's label
+        help: "The shipper's own codes are listed first."
+        required: true
+      - kind: comment
+        label: "Why is this bill being rejected?"
+        required: false
+```
 
 | Key | Type | Effect |
 |---|---|---|
-| `requireComment` | bool | Prompts for a comment **before any mutation**. Cancelling aborts the action and leaves the task untouched. The comment is persisted as a `COMMENT` task activity tagged with the action token. |
-| `commentPrompt` | string | Dialog text. Defaults to *Add a comment to record why you ran "&lt;label&gt;"*. |
+| `dialog.title`, `dialog.description`, `dialog.submitLabel` | string | Dialog chrome. Title and submit label default to the action's label. |
+| `dialog.fields[]` | array | In order. No fields, no dialog. |
+| `fields[].kind` | `attribute` \| `comment` | `attribute` (default) binds a taxon; `comment` is the task comment (a `COMMENT` activity tagged with the action token). |
+| `fields[].taxon` | `{taxonomySlug, taxonPath}` or path string | The taxon an `attribute` field writes. A field without a usable taxon is dropped. |
+| `fields[].label`, `fields[].help` | string | Above / under the control. A comment field's `help` is its prompt. |
+| `fields[].required` | bool | Submit is disabled until the field has a value. Default `false`. |
+
+Facts that decide what a field can do:
+
+- **The control is the taxon's.** A `SELECTION` taxon renders a dropdown with its own
+  `selectionOptions` or `selectionOptionFormula` (a service-bridge lookup keyed on another field
+  works). There are no per-field option lists or value types in the dialog.
+- **The field writes to one data object**: the one at the taxon's parent path that already holds
+  the attribute, else the first one there — the same row a form's attribute editor binds. A
+  root-level taxon, or a task with no document, has none: the field shows as unavailable and
+  blocks submit only when `required`. Put dialog taxons under a group (`Response/...`).
+- **Dialog values are written after `attributes`**, so a reviewer's pick wins over a fixed value
+  on the same path. A settled (immutable) attribute is shown read-only and never written.
+- **Nothing changes on the server.** `dialog` is stored like any other property; values travel as
+  document edits in the same batch save; an optional comment is accepted. A UI that predates the
+  feature runs the action without a dialog — keep `required` fields to values a downstream step
+  can tolerate missing until every environment has caught up.
+
+### Comment capture (the legacy spelling)
+
+| Key | Type | Effect |
+|---|---|---|
+| `requireComment` | bool | The same as a `dialog` with one **required** `comment` field. Beside a `dialog`, it makes the dialog's comment field required (adding one when there is none). Cancelling aborts the action and leaves the task untouched. |
+| `commentPrompt` | string | The comment field's help text when the dialog declares none. Defaults to *Add a comment to record why you ran "&lt;label&gt;"*. |
 
 ### Data writes
 
@@ -167,10 +217,10 @@ by the editor and read by nothing.
 
 When a reviewer clicks an action:
 
-1. If `requireComment`, prompt — cancelling aborts everything.
+1. If the action declares a `dialog` (or `requireComment`), open it — cancelling aborts everything.
 2. Apply `statusSlug` (or `statusId`) and any `lockTask` / `lockDocumentFamily` overrides.
 3. Record the completion token (`uuid || slug`).
-4. Apply `attributes`.
+4. Apply `attributes`, then the dialog's values.
 5. Apply `takeOwnershipForPaths`.
 6. Save everything in one batch, then navigate away.
 
