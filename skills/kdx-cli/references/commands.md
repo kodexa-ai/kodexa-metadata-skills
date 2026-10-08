@@ -370,7 +370,9 @@ on `deploy`.
 **metadata-envelope** `references/overlays.md`) are pulled and pushed as their delta: pull writes
 the envelope, `extends` and `overlay` and removes resolved content from an existing file; push and
 `apply` send that form and do not send content beside `extends` (a `⚠️` line says so). The overlay
-is compared as written, so reordering its changes is pushed.
+is compared as written, so reordering its changes is pushed; `extends` is compared as the server
+stores it, so a short `extends` pushes once. A file whose resource the server holds plain (detached
+with `extends: null`) is pulled as the plain resource, without `extends` and `overlay`.
 
 ## `kdx overlay resolve <file>`
 
@@ -435,7 +437,10 @@ triggers it creates, the option definitions and data properties it sets — thro
 without writing; `--since <ref>` counts the additions from another of the overlay's bases;
 `--overwrite-data-properties` replaces values the project set itself (kept and reported otherwise).
 Idempotent: a second run reports everything as already in place. A template without `extends` is
-a 400.
+a 400. Each change needs its own endpoint's permission (a binding `project-resource:bind` on the
+project, a trigger `trigger:create`, ...); a delta with any change you may not make is refused whole
+(403, nothing applied, `--dry-run` too), and the command prints each refused change with the
+permission it needs and exits non-zero.
 
 ## `kdx intake`
 

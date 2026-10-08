@@ -160,8 +160,10 @@ every save of the base**, storing the resolved resource beside the delta. Load-b
 envelope keys (`slug`, `name`, `description`, flags) stay at the top level, never in `overlay`;
 content sent beside `extends` is derived and not used; a base change that breaks an overlay leaves
 it on its last good resolution with `overlayResolution.error`; **an activity plan keeps running that
-resolution, each activity marked stale** (`metadata.overlayStale: refuse` refuses instead, 409); a base
-with live overlays cannot be deleted. Full language and rules:
+resolution, each activity marked stale** (a plan that refuses stale runs — `metadata.overlayStale: refuse`
+in its overlay, else in the base being saved — gets 409 instead); a misspelt change key is a 400 naming
+the closest one, never a silent whole-list replacement; a base with live overlays cannot be deleted.
+Full language and rules:
 `references/overlays.md`.
 
 ## Where the file lives

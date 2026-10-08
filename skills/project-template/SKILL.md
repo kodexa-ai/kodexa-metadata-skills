@@ -53,7 +53,9 @@ POST /api/projects
   (an overlay — see **metadata-envelope**, `references/overlays.md`) can have what it adds over its base
   applied to an existing project with `kdx project apply-template-delta <project> --template <overlay>`
   (`POST /api/projects/{id}/template-delta`): binds, creates sets, stores and triggers, sets options and
-  data properties, keeps the project's own values, idempotent, `--dry-run` first.
+  data properties, keeps the project's own values, idempotent, `--dry-run` first. Each change needs its
+  own endpoint's permission (`project-resource:bind` to bind, `trigger:create`, ...); one refused change
+  refuses the whole delta (403, nothing applied).
 - A `?templateRef=` **query parameter is ignored** — the create handler reads the body only. That is
   exactly what `kdx project create --template` sends, so it yields a bare, unprovisioned project.
 - `kdx sync push` deliberately strips `projectTemplateRef` from project creates and restores it
