@@ -76,10 +76,11 @@ An anchor that matches nothing, or more than one item, is a 400 naming the chang
 |---|---|
 | `activity-plan` | `steps` (slug), `inputOptions` (name), `documentFamilyGroups` (name) |
 | `task-template` | `metadata.actions` (slug, uuid or label), `metadata.forms` (dataFormRef) and each form's `actions`, `metadata.options` (name), `metadata.documentFamilyGroups` (name), `metadata.agentShortcuts` (id) |
-| `data-form` | `cards` (id) and `nodes` (key or ref) as trees, searched at any depth; `options`, `views`, `actions`, `tabOrderGroups` (name); `tabOrder` (path); `shortcuts` (key) |
+| `data-form` | `cards` (id) and `nodes` (key or ref) as trees, searched at any depth; the rows of a card a V2 node wraps (`props.card.children`, id); `options`, `views`, `actions`, `tabOrderGroups` (name); `tabOrder` (path); `shortcuts` (key) |
 | `project-template` | `activityPlans`, `taskTemplates`, `dataForms`, `serviceBridges`, `stores`, `taxonomies` (ref, or slug for an inline entry); `knowledgeSets` and their `knowledgeItems` (slug); `triggers` (slug); `assistants` (slug or name); statuses (slug); `tags` (label); `options.options`, `options.dataOptions` (name) |
 
-A component with no key (a V2 node without `key` or `ref`) is named by a map of its fields.
+A component with no key (a V2 node without `key` or `ref`) is named by a map of its fields — a
+node that wraps a card by `{props.card.id: <card id>}`.
 
 ## Resolution rules
 
