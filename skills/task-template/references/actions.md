@@ -118,12 +118,104 @@ Omit either key to keep the status default. The document-family default is **on*
 
 Every action is also disabled while the task is locked, loading, or another action is running.
 
-### Comment capture
+### Dialog — ask the reviewer before the action runs
+
+An action may open a dialog when pressed (platform #1393, #1404, #1406, 2026-10): a short list of
+taxon fields and/or a comment, or a project **data form**, shown **before any mutation**. A field
+writes to the document as the reviewer sets it (so a dropdown keyed on another field recomputes
+while the dialog is open); cancel, `Esc` or the overlay aborts the action and puts the fields back;
+submit writes nothing more and the action runs as usual.
+
+```yaml
+properties:
+  statusSlug: rejected
+  dialog:
+    title: "Reject this bill"                 # default: the action label
+    description: "Pick the reject code."       # optional
+    submitLabel: "Reject"                      # default: the action label
+    fields:
+      - kind: attribute                        # the default kind
+        taxon: { taxonomySlug: freight-agents, taxonPath: Response/CassRejectCode }
+        label: "Cass reject code"              # default: the taxon's label
+        help: "The shipper's own codes are listed first."
+        required: true
+      - kind: comment
+        label: "Why is this bill being rejected?"
+        required: false
+```
 
 | Key | Type | Effect |
 |---|---|---|
-| `requireComment` | bool | Prompts for a comment **before any mutation**. Cancelling aborts the action and leaves the task untouched. The comment is persisted as a `COMMENT` task activity tagged with the action token. |
-| `commentPrompt` | string | Dialog text. Defaults to *Add a comment to record why you ran "&lt;label&gt;"*. |
+| `dialog.title`, `dialog.description`, `dialog.submitLabel` | string | Dialog chrome. Title and submit label default to the action's label. |
+| `dialog.fields[]` | array | In order. No fields and no `dataFormRef`, no dialog. |
+| `dialog.dataFormRef` | ref | A project data form rendered above the fields (see below). |
+| `dialog.requireValues[]` | taxon refs or paths | With a form: paths that must hold a value before submit. |
+| `dialog.requireClean` | bool | With a form, default `true`: open exceptions on the form's own fields also block submit. |
+| `fields[].kind` | `attribute` \| `comment` | `attribute` (default) binds a taxon; `comment` is the task comment (a `COMMENT` activity tagged with the action token). |
+| `fields[].taxon` | `{taxonomySlug, taxonPath}` or path string | The taxon an `attribute` field writes. A field without a usable taxon is dropped. |
+| `fields[].label`, `fields[].help` | string | Above / under the control. A comment field's `help` is its prompt. |
+| `fields[].required` | bool | Submit is disabled until the field has a value. Default `false`. |
+
+Facts that decide what a field can do:
+
+- **The control is the taxon's.** A `SELECTION` taxon renders a dropdown with its own
+  `selectionOptions` or `selectionOptionFormula` (a service-bridge lookup keyed on another field
+  works). There are no per-field option lists or value types in the dialog.
+- **The field writes to one data object**: the one at the taxon's parent path that already holds
+  the attribute, else the first one there — the same row a form's attribute editor binds. A
+  root-level taxon, or a task with no document, has none: the field shows as unavailable and
+  blocks submit only when `required`. Put dialog taxons under a group (`Response/...`).
+- **A reviewer's pick wins over a fixed value on the same path**: the action's `attributes` skip
+  any path the dialog set. A settled (immutable) attribute is shown read-only and never written.
+- **Nothing changes on the server.** `dialog` is stored like any other property; values travel as
+  document edits in the same batch save; an optional comment is accepted. A UI that predates the
+  feature runs the action without a dialog — keep `required` fields to values a downstream step
+  can tolerate missing until every environment has caught up.
+
+#### A data form in the dialog
+
+When several buttons ask the same question, or the question needs layout, name a data form instead
+of repeating a field list:
+
+```yaml
+properties:
+  statusSlug: rejected
+  dialog:
+    title: "Reject this bill"
+    submitLabel: "Reject"
+    dataFormRef: ${org}/reject-dialog            # a data form LINKED to the project
+    requireValues:                               # Reject stays disabled until both hold a value
+      - { taxonomySlug: freight-agents, taxonPath: Response/CassRejectBaseCode }
+      - { taxonomySlug: freight-agents, taxonPath: Response/CassRejectCode }
+    fields:
+      - kind: comment                            # fields still render, under the form
+```
+
+Facts that decide how to use it:
+
+- **The form must be linked to the project** (`projects.<slug>.linked.data-form` in the sync
+  manifest, or Studio); the dialog looks it up among the project's data forms and shows a one-line
+  notice when it is missing. Bind it per document family (`entrypoints: [documentFamily]`): the
+  dialog gives it the task's families, so it reads the same rows the task's forms do.
+- **`requireValues` is the form's "required".** A form has no per-control required flag, and a
+  validation rule on the taxon would flag every document, not just the one in front of the
+  reviewer. `requireClean` only watches exceptions on the paths the form edits (plus
+  `requireValues`), never the whole document's — a bill under Reject has exceptions by definition.
+- **A form dialog's edits are edits.** Cancel closes the dialog and the action does not run, but
+  nothing is undone (the field-list dialog does restore; a form can add and remove rows across many
+  objects and the engine has no scoped revert). If a cancelled pick must not survive, have the
+  happy-path action clear it: `attributes` stamping the dialog's paths to `''` clear an existing
+  value and create nothing where there is none.
+- **Keep dialog forms short.** A form store and a sidecar view are created per press and torn down
+  on close: fine for three fields, the wrong tool for thirty. Use a field list when the question is
+  unique to one button; a form when buttons share it or it needs layout.
+
+### Comment capture (the legacy spelling)
+
+| Key | Type | Effect |
+|---|---|---|
+| `requireComment` | bool | The same as a `dialog` with one **required** `comment` field. Beside a `dialog`, it makes the dialog's comment field required (adding one when there is none). Cancelling aborts the action and leaves the task untouched. |
+| `commentPrompt` | string | The comment field's help text when the dialog declares none. Defaults to *Add a comment to record why you ran "&lt;label&gt;"*. |
 
 ### Data writes
 
@@ -167,10 +259,10 @@ by the editor and read by nothing.
 
 When a reviewer clicks an action:
 
-1. If `requireComment`, prompt — cancelling aborts everything.
+1. If the action declares a `dialog` (or `requireComment`), open it — cancelling aborts everything.
 2. Apply `statusSlug` (or `statusId`) and any `lockTask` / `lockDocumentFamily` overrides.
 3. Record the completion token (`uuid || slug`).
-4. Apply `attributes`.
+4. Apply `attributes`, then the dialog's values.
 5. Apply `takeOwnershipForPaths`.
 6. Save everything in one batch, then navigate away.
 
