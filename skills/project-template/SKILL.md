@@ -49,7 +49,11 @@ POST /api/projects
 ```
 
 - Editing a template **never** retro-applies to projects already created from it. Re-create, or edit
-  the project's resources directly.
+  the project's resources directly. The one exception is additive: a template that **`extends`** another
+  (an overlay — see **metadata-envelope**, `references/overlays.md`) can have what it adds over its base
+  applied to an existing project with `kdx project apply-template-delta <project> --template <overlay>`
+  (`POST /api/projects/{id}/template-delta`): binds, creates sets, stores and triggers, sets options and
+  data properties, keeps the project's own values, idempotent, `--dry-run` first.
 - A `?templateRef=` **query parameter is ignored** — the create handler reads the body only. That is
   exactly what `kdx project create --template` sends, so it yields a bare, unprovisioned project.
 - `kdx sync push` deliberately strips `projectTemplateRef` from project creates and restores it

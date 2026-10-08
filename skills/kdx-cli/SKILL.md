@@ -174,6 +174,10 @@ the sigils, branch/tag mappings: `references/sync-manifest.md`. Three more facts
 - **`--force` overrides the conflict skip only.** It never reaches the content-equality test, so
   *removing* a key from a resource file is a silent no-op — comparison is by containment. Deletion is
   honoured only on v2 and only for `data-definition` `taxons` and `task-template` `metadata.properties`.
+- **An overlay file (`extends` + `overlay`) syncs as its delta** — resolved content is never pulled
+  into it or pushed from it. `kdx overlay resolve <file> --base-dir <dir> [--check <file>]` shows (or
+  tests) what it resolves to offline; `kdx project apply-template-delta` applies an overlay
+  template's additions to an existing project (`references/commands.md`).
 - **Sigil resolution never fails a push.** `${taskTemplate.…}`, `${taskStatus.…}`, `${docStatus.…}`,
   `${workspace.…}` and `${activityPlan.…}` warn and are left in the payload verbatim when
   unresolvable. Grep the push log for `⚠️` lines before believing a green run.

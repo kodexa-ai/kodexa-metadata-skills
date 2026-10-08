@@ -1,6 +1,6 @@
 ---
 name: metadata-envelope
-description: "Use when authoring or debugging any Kodexa resource YAML — the shared slug / name / orgSlug / type envelope twelve org-scoped resource types embed, the flatten rule that makes authored YAML flat, what a slug is actually checked against, the changeSequence optimistic lock, the computed ref and uri, and where each file lives in a metadata repo."
+description: "Use when authoring or debugging any Kodexa resource YAML — the shared slug / name / orgSlug / type envelope twelve org-scoped resource types embed, the flatten rule that makes authored YAML flat, what a slug is actually checked against, the changeSequence optimistic lock, the computed ref and uri, extends + overlay (a plan, task template, data form or project template written as a delta over a base), and where each file lives in a metadata repo."
 ---
 
 # Kodexa Metadata Envelope
@@ -148,6 +148,20 @@ So **never hand-write `changeSequence` into a resource file.** `kdx sync pull` s
 map at every depth for exactly this reason, recording the watermark in
 `.sync-state/<env>/<org-slug>.yaml` instead; push compares against that file and skips a resource
 whose server sequence has moved on, which `--force` overrides.
+
+## `extends` + `overlay` — a resource as a delta
+
+An `activity-plan`, `task-template`, `data-form` or `project-template` may name a base of its own
+kind in **its own organization** (`extends: activity-plan://${org}/invoice-review-plan`) and carry
+only what it changes in `overlay`: maps merge, scalars and plain lists replace, and a list of
+changes (`insert` with `before`/`after`/`into`, `replace`, `merge`, `remove`, each anchored on a key
+or a field match) edits the base's list in order. The server resolves it **on save and again on
+every save of the base**, storing the resolved resource beside the delta. Load-bearing facts:
+envelope keys (`slug`, `name`, `description`, flags) stay at the top level, never in `overlay`;
+content sent beside `extends` is derived and not used; a base change that breaks an overlay leaves
+it on its last good resolution with `overlayResolution.error`, and **such a plan cannot start**
+until fixed; a base with live overlays cannot be deleted. Full language and rules:
+`references/overlays.md`.
 
 ## Where the file lives
 

@@ -366,6 +366,27 @@ Persistent on the `sync` group: `--metadata-dir`, `--config`.
 `--env` names an entry in `sync-config.yaml`'s `environments:` block. `--target` requires `--env`
 on `deploy`.
 
+**Overlay resources** (a plan, task template, data form or project template with `extends`; see
+**metadata-envelope** `references/overlays.md`) are pulled and pushed as their delta: pull writes
+the envelope, `extends` and `overlay` and removes resolved content from an existing file; push and
+`apply` send that form and do not send content beside `extends` (a `⚠️` line says so). The overlay
+is compared as written, so reordering its changes is pushed.
+
+## `kdx overlay resolve <file>`
+
+Resolves an overlay file offline: finds its base by slug among the YAML files under `--base-dir`
+(repeatable; default the directory above the file's type directory), follows the base's own
+`extends`, applies the overlay, and prints the resolved resource (`-o json` for JSON).
+
+| Flag | |
+|---|---|
+| `--base-dir <dir>` | where to look for bases, recursively |
+| `--check <file>` | fail, naming the differing fields or steps, unless the result equals this file |
+| `--kind` | `activity-plan`, `task-template`, `data-form`, `project-template`, when neither `type` nor the directory says |
+| `--org <slug>` | what `${org}` / `${orgSlug}` stand for when refs are compared |
+
+`--check` is how a repository holds an overlay to the rendered resource it replaces in CI.
+
 ---
 
 # Plugin command groups
@@ -401,6 +422,20 @@ kdx run projects <create-op> --body '{ … , "projectTemplateRef": "acme-corp/in
 
 Omitting `projectTemplateRef` gives a deliberately bare project, which is a reasonable choice —
 provided you then bind its resources yourself (**project-resource**).
+
+```bash
+kdx project apply-template-delta acme-corp/invoice-processing --template acme-corp/invoice-template-audit --dry-run
+kdx project apply-template-delta <project-id> --template project-template://acme-corp/invoice-template-audit
+```
+
+Applies what an **overlay** template (one with `extends`) adds over its base to an existing project
+— the plans, task templates, data forms, bridges and stores it binds, the stores, knowledge sets and
+triggers it creates, the option definitions and data properties it sets — through
+`POST /api/projects/{id}/template-delta`. `<project>` is an id or `org/slug`. `--dry-run` reports
+without writing; `--since <ref>` counts the additions from another of the overlay's bases;
+`--overwrite-data-properties` replaces values the project set itself (kept and reported otherwise).
+Idempotent: a second run reports everything as already in place. A template without `extends` is
+a 400.
 
 ## `kdx intake`
 
