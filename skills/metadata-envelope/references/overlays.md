@@ -56,8 +56,14 @@ Each overlay key mirrors the field it changes:
   list with a list (`{replace: []}` empties it; the only way to replace a list), a map with a map,
   either where the base has none. A `V` of another type than the base's (a list for a step's
   `options` map, anything for a string) is a 400 naming the field and both types; `replace` beside
-  other keys is a 400 too. A field literally named `replace` is written `\replace` (a key that starts
-  with a backslash names the field without it; two keys naming one field are a 400);
+  other keys is a 400 too, as is a keyed list (steps, cards) replaced by items that are not maps. A
+  field literally named `replace` is written `\replace` (a key that starts with a backslash names
+  the field without it; two keys naming one field are a 400). A key that only looks like another is
+  a 400 with the key it most likely meant: one folding onto `replace` without being it (`Replace`,
+  full-width `ｒｅｐｌａｃｅ`), and one differing from a field the base has there only in case or width
+  (`Type` beside `type`); escape it to mean it (`\Replace`, `\Type`). **In YAML write the escape in
+  single quotes (`'\replace':`) or unquoted — never double quotes, where `"\replace"` is a carriage
+  return and `eplace`** (a key holding a control character is a 400 anywhere in an overlay);
 - **a list** is always a list of changes, which edits the base's list in place, in order:
 
 | Change | Effect |
@@ -169,7 +175,12 @@ node that wraps a card by `{props.card.id: <card id>}`.
   plan — the order saves and cascades use — and, when the chain changed in between, rolls back to the
   savepoint (letting those rows go) and locks again (three tries, then 409). A plan is never held
   while its base is waited for, so one transaction that starts several plans (a multi-file intake)
-  cannot deadlock a base's save.
+  cannot deadlock a base's save. A plain plan's start adds only `SAVEPOINT`, a plain
+  `SELECT extends_id` and `RELEASE` — no lock. An overlay's save locks its base chain and its row the
+  same way, under a savepoint it rolls back to (letting both go) when its row was re-pointed
+  meanwhile; a base's save lets go at once of an overlay it finds re-pointed away. A save whose
+  `changeSequence` is stale is a 409 `CONFLICT`, as for a plain resource, before its content is looked
+  at.
 - `overlayResolution` is server-written (base id and ref, chain, time, the list changes the overlay
   made, and when stale: the error, the save that caused it, the strict mode) and never accepted. An
   activity's plan snapshot keeps only the base, its `changeSequence`, the resolution time and whether
@@ -207,7 +218,10 @@ template's set a per-project slug such as `invoices-${project.id}`). A stale ove
 or activity added meanwhile does not wait for) and options are merged key by key, so concurrent
 applies keep each other's keys. A binding or trigger the project gets meanwhile is found (reported
 unchanged); a delta that keeps colliding with concurrent writes is rolled back whole and is a 409
-`TEMPLATE_DELTA_CONFLICT`. A project being deleted is a 404, as GET answers it.
+`TEMPLATE_DELTA_CONFLICT`. A project being deleted is a 404, as GET answers it. Each trigger the
+delta would create is checked in its plan as `POST /api/triggers` checks a create; one that endpoint
+would refuse refuses the whole delta, dry run included, with 400 `TEMPLATE_DELTA_INVALID` naming the
+trigger and why.
 
 It needs `project:update`, and each change is authorized as its own endpoint authorizes it:
 
