@@ -52,8 +52,12 @@ Each overlay key mirrors the field it changes:
 - **a map** merges into the base's map, field by field and recursively; `null` removes a field;
   fields left out are the base's (JSON merge patch, RFC 7386);
 - **a scalar** replaces;
-- **`{replace: [...]}`** replaces the whole list with the list it holds, taken as written
-  (`{replace: []}` empties it) — the only way to replace a list;
+- **`{replace: V}`**, alone in its map, replaces the whole value with `V`, taken as written — a
+  list with a list (`{replace: []}` empties it; the only way to replace a list), a map with a map,
+  either where the base has none. A `V` of another type than the base's (a list for a step's
+  `options` map, anything for a string) is a 400 naming the field and both types; `replace` beside
+  other keys is a 400 too. A field literally named `replace` is written `\replace` (a key that starts
+  with a backslash names the field without it; two keys naming one field are a 400);
 - **a list** is always a list of changes, which edits the base's list in place, in order:
 
 | Change | Effect |
@@ -88,7 +92,8 @@ compared after NFKC normalization, case folding and dropping invisible character
 not a change verb (did you mean "remove"?): … to replace the whole list write steps: {replace:
 [...]}`. A misspelt modifier is a 400 naming the key, the verb, the list, what the verb takes and the
 closest one (`"wiht" is not a modifier of merge … (did you mean "with"?)`). An empty list (`[]`), and
-a map or scalar given for a list, are 400s too. An error inside a `merge` names where it is
+a map or scalar given for a list, are 400s too, as is a resolution that does not fit the resource
+(`cards[0].properties resolves to a string, where it must be a map`). An error inside a `merge` names where it is
 (`overlay.steps[3].with.dependsOn[0]`).
 
 **Anchors.** A string names an item by its key; a map of `{field: value}` names the one item whose
@@ -120,9 +125,10 @@ node that wraps a card by `{props.card.id: <card id>}`.
   overlay inserted or changed (`step "po-audit" was inserted by the overlay of activity plan
   "invoice-review-plan-audit" (overlay.steps[1])`, whatever the change's anchor) and point at the
   change. The plan editor's validate endpoint accepts `extends` + `overlay` and validates them as
-  they resolve; it needs `activity-plan:read` in the `organizationId` sent — an organization the
-  caller cannot read, or one that does not exist, gets one 404 whatever is asked, and a base the
-  caller cannot read is reported as one that does not exist.
+  they resolve. Its `organizationId` is checked as every validate request's is (403 when the caller
+  cannot open the plan editor there); an `extends`/`overlay` request then also needs
+  `activity-plan:read` there, or gets one 404 whatever the base, and a base the caller cannot read is
+  reported as one that does not exist. A request without them is validated as it always was.
 - **Saves of a base and its overlays serialize.** An overlay's save locks its bases (root first) and
   then itself before resolving; a base's save locks its overlays parent before child. The stored
   content is always the stored overlay resolved against the stored base, and every write moves
@@ -149,15 +155,21 @@ node that wraps a card by `{props.card.id: <card id>}`.
   the delete waits and sees it). `extends: null` — alone, or with `overlay: null` — detaches an
   overlay: the overlay goes with it, the resource keeps the content it was last resolved to and
   stops following the base.
-- **Content is edited in the overlay.** A save of an overlay resource whose content differs from what
-  it stores, sent **without** an `overlay`, is a **409 `OVERLAY_CONTENT_IGNORED`** (the edit would be
-  lost): change the overlay, or detach (`extends: null`) to edit the content. Content sent beside an
-  `overlay` (kdx push does this) is not used, with a warning. Studio's task template, data form and
+- **Content is edited in the overlay.** Content in a write of an overlay resource must be absent or
+  what the overlay resolves to (or what is stored: a body sent back as loaded); anything else is a
+  **409 `OVERLAY_CONTENT_IGNORED`** naming the fields, with or without an `overlay` in the body (a
+  round-tripped GET body with edited content, a create with its own content): change the overlay,
+  sent alone, or detach (`extends: null`) to edit the content. The localization PATCH of an overlay
+  data form is refused the same way. kdx push sends overlays without content; the agent's data form,
+  task template and plan tools refuse to edit an overlay and say how it is changed. Studio's task template, data form and
   project template editors show an overlay resource read-only; the plan editor saves tab edits as the
   plan's own values in its overlay.
-- **Starts lock in the same order.** An activity start of an overlay plan takes its bases, root first,
-  before the plan — the order saves and cascades use — so one transaction that starts several plans
-  (a multi-file intake) cannot deadlock a base's save.
+- **Starts and replans lock in the same order.** Every start (direct, intake, trigger, spawn) and
+  replan reads the plan's extends chain as it is now, locks it root first under a savepoint, then the
+  plan — the order saves and cascades use — and, when the chain changed in between, rolls back to the
+  savepoint (letting those rows go) and locks again (three tries, then 409). A plan is never held
+  while its base is waited for, so one transaction that starts several plans (a multi-file intake)
+  cannot deadlock a base's save.
 - `overlayResolution` is server-written (base id and ref, chain, time, the list changes the overlay
   made, and when stale: the error, the save that caused it, the strict mode) and never accepted. An
   activity's plan snapshot keeps only the base, its `changeSequence`, the resolution time and whether
@@ -191,8 +203,11 @@ project set to its own value is kept unless `overwriteDataProperties`. Idempoten
 `--dry-run` reports without writing. Assistants, statuses and tags are reported as not applied, as
 is a knowledge set whose slug the organization already uses for another project's set (give a
 template's set a per-project slug such as `invoices-${project.id}`). A stale overlay template is a
-409 `OVERLAY_STALE`. The project row is locked first and options are merged key by key, so concurrent
-applies keep each other's keys.
+409 `OVERLAY_STALE`. The project row is locked first (`FOR NO KEY UPDATE`, which a binding, trigger
+or activity added meanwhile does not wait for) and options are merged key by key, so concurrent
+applies keep each other's keys. A binding or trigger the project gets meanwhile is found (reported
+unchanged); a delta that keeps colliding with concurrent writes is rolled back whole and is a 409
+`TEMPLATE_DELTA_CONFLICT`. A project being deleted is a 404, as GET answers it.
 
 It needs `project:update`, and each change is authorized as its own endpoint authorizes it:
 

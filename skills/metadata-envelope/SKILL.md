@@ -156,10 +156,12 @@ kind in **its own organization** (`extends: activity-plan://${org}/invoice-revie
 only what it changes in `overlay`: maps merge, scalars replace, a list is always a list of changes
 (`insert` with `before`/`after`/`into`, `replace`, `merge`, `remove`, each anchored on a key or a
 field match) that edits the base's list in order, and `{replace: [...]}` is the only way to replace a
-whole list. The server resolves it **on save and again on
+whole list (`{replace: V}` replaces only a value of its own type; a field named `replace` is written
+`\replace`). The server resolves it **on save and again on
 every save of the base**, storing the resolved resource beside the delta. Load-bearing facts:
 envelope keys (`slug`, `name`, `description`, flags) stay at the top level, never in `overlay`;
-content sent beside `extends` is derived and not used; a base change that breaks an overlay leaves
+content sent beside `extends` is derived, so an edit of it is a 409 `OVERLAY_CONTENT_IGNORED` (send
+the overlay alone); a base change that breaks an overlay leaves
 it on its last good resolution with `overlayResolution.error`; **an activity plan keeps running that
 resolution, each activity marked stale** (a plan that refuses stale runs — `metadata.overlayStale: refuse`
 in its overlay, else in the base being saved — gets 409 instead); a misspelt change key is a 400 naming
