@@ -165,8 +165,13 @@ environments:
 ```
 
 `kdx sync pull --discover` writes a correct manifest for you — start there rather than hand-rolling
-one. Manifest shape, the 22 syncable types and their push order, repository layout, `${org}` and
-the sigils, branch/tag mappings: `references/sync-manifest.md`. Three more facts to carry:
+one. Manifest shape, the 24 syncable types and their push order, repository layout, `${org}` and
+the sigils, branch/tag mappings: `references/sync-manifest.md`. Four more facts to carry:
+
+- **A top-level `landing:` block in the manifest changes what an organization's home page shows.**
+  `landing: {ref: landing://${org}/<slug>}` activates that landing after a clean, unfiltered push
+  (or deploy). `landing: {ref: null}` clears it. Omitting the block leaves the assignment alone.
+  Pushing the `landing` resource on its own only stages it. See **landing** and `kdx landing`.
 
 - **`kdx sync deploy` has no production guard.** The `--production` profile flag is honoured only by
   `kdx apply`, `kdx delete` and `kdx sync push`. For deploys, run `--dry-run` first, or pass
@@ -209,5 +214,6 @@ Fields that persist, round-trip and look meaningful, but that nothing reads:
 
 Each documents one resource type's own fields; the envelope above is shared, and `kdx validate` →
 `kdx apply` is where they all terminate: **activity-plan**, **assistant**, **data-definition**,
-**data-form**, **intake**, **knowledge-system**, **module**, **project-resource**, **project-template**,
-**prompt-template**, **service-bridge**, **task-status**, **task-template**, **trigger**.
+**data-form**, **intake**, **knowledge-system**, **landing**, **module**, **project-resource**,
+**project-template**, **prompt-template**, **service-bridge**, **task-status**, **task-template**,
+**trigger**.

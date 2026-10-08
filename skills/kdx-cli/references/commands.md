@@ -358,13 +358,30 @@ Persistent on the `sync` group: `--metadata-dir`, `--config`.
 
 | Command | Flags |
 |---|---|
-| `pull` | `--target` (repeatable), `--env`, `--from-profile`, `--from-url`, `--from-api-key`, `--skip-missing`, `--discover`, `--discover-dir`, `-f/--filter` (regex), `--threads` (4) |
+| `pull` | `--target` (repeatable), `--env`, `--from-profile`, `--from-url`, `--from-api-key`, `--skip-missing`, `--discover`, `--discover-dir`, `-f/--filter` (regex), `--threads` (4), `--landing-revision` (`latest` \| `active`) |
 | `push` | `--target` (repeatable), `--env`, `--to-profile`, `--to-url`, `--to-api-key`, `--dry-run`, `-f/--filter` (regex), `--force`, `--threads` (4) |
 | `deploy` | `--target` (repeatable), `--env`, `--branch`, `--tag`, `--dry-run`, `--force`, `--confirm-each`, `--confirm-all`, `-f/--filter` (regex), `--output-json`, `--threads` (4) |
 
 `pull`/`push` also accept deprecated `--organization` / `--project`; prefer `--target`.
 `--env` names an entry in `sync-config.yaml`'s `environments:` block. `--target` requires `--env`
 on `deploy`.
+
+## `kdx landing`
+
+Choose what an organization's Workflow home shows. `kdx apply` / `kdx sync push` only **stage** a
+landing resource; these commands **activate** one. All three require `--org-slug`.
+
+| Command | Does |
+|---|---|
+| `kdx landing get --org-slug acme-corp` | Prints the active landing with its **active** and **latest** revisions, and warns `diverged` when edits are staged but not active. With nothing active, the organization shows the standard tabs. |
+| `kdx landing set landing://acme-corp/workflow --org-slug acme-corp [--dry-run]` | Activates the landing's **current** revision and freezes a snapshot of it. Setting the revision that is already active is a no-op. |
+| `kdx landing clear --org-slug acme-corp [--dry-run]` | Returns the organization to the standard tabs. The landing resource is kept. |
+
+There is no `--force`. Both `set` and `clear` send the assignment's `changeSequence`, and `set`
+also sends the landing revision it just read. If either moved in between, the server answers 409 and
+the command stops with `re-run to pick up the new revision`; it never retries. Activation needs
+`landing:publish` at organization scope, and runs the full readiness check. An unready landing
+fails with `landing is not ready for activation` and a list of findings. See **landing**.
 
 ---
 
