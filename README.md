@@ -8,7 +8,7 @@ Each skill is written against the platform source: field names from the entity m
 
 | Skill | Covers |
 |-------|--------|
-| **activity-plan** | Org-scoped step graphs — `EXECUTION`, `CREATE_TASK`, `SCRIPT`, `LLM`, `BRIDGE_CALL`, `AGENT`; the flat step envelope, dependency grammar, per-document routing, document status control |
+| **activity-plan** | Org-scoped step graphs — `EXECUTION`, `CREATE_TASK`, `SCRIPT`, `LLM`, `BRIDGE_CALL`, `AGENT`; the flat step envelope, dependency grammar, per-document routing, document status control, AGENT steps that read project properties and save downloaded files |
 | **assistant** | Project-scoped pipelines — `options.pipeline` steps, taxonomy refs, agent config, and when to reach for an activity plan instead |
 | **channel-type** | The Studio agent's configuration surface — `moduleRefs`, `mcpServers`, `systemPromptFragment` and built-in `skills`; not syncable, and bind-once to a channel |
 | **data-definition** | Taxonomies — taxons, data types, `semanticDefinition` extraction prompts, type features, repeating groups, validation and formulas |
@@ -20,12 +20,12 @@ Each skill is written against the platform source: field names from the entity m
 | **metadata-envelope** | The `slug`/`name`/`orgSlug`/`type` envelope shared by twelve org-scoped types — the flatten rule, what a slug is really checked against, `changeSequence`, the computed `ref`/`uri`, and repo layout |
 | **module** | Python, Go-WASM and inline-JavaScript model modules plus agent skill packs — `moduleType`, runtime refs, sidecars, inference options |
 | **project-resource** | Making an org-scoped resource usable in a project — the binding model, and the silent failures when a binding is missing |
-| **project-template** | Blueprints that provision a project — stores, assistants, taxonomies, forms, status workflows, and the closed-struct rule that drops unknown keys |
+| **project-template** | Blueprints that provision a project — stores, assistants, taxonomies, forms, status workflows, service-bridge bindings, New Project placeholders and `launchActivity`, and the closed-struct rule that drops unknown keys |
 | **prompt-template** | Prompt resources — `promptTemplate` with `FSTRING` or `MUSTACHE` templating, and the four paths that consume one |
 | **service-bridge** | Proxying an external HTTP API — `baseUrl`, named endpoints, secret interpolation, OAuth2, caching, and the egress fence |
 | **store** | Document stores and data stores — the asymmetric flatten that silently drops inner keys written flat, `storeType`/`storePurpose`, and the binding gate |
 | **task-status** | The workflow states tasks move through — `statusType`, locking, and which mechanics fail open versus closed |
-| **task-template** | Human review/approval tasks — action buttons and their transitions, attached forms, document groups, AI naming |
+| **task-template** | Human review/approval tasks — action buttons and their transitions, attached forms, document groups, AI naming, the activity Outputs panel |
 | **trigger** | Starting an activity plan when a platform event fires — event kinds, JSONata filters and input mapping |
 
 ## Installation

@@ -1,6 +1,6 @@
 ---
 name: activity-plan
-description: "Use when writing or editing Kodexa ActivityPlan YAML — the org-scoped graph of steps (EXECUTION, CREATE_TASK, SCRIPT, LLM, BRIDGE_CALL, AGENT) that runs as a project Activity. Covers the flat step envelope keyed by `type`, dependsOn and action edges, per-document fan-out and routing (perDocument, ANY_BRANCH, await `?` deps), setDocumentStatus, inputOptions vs inputsSchema, per-field reference formats, and the several template languages that coexist in one plan."
+description: "Use when writing or editing Kodexa ActivityPlan YAML — the org-scoped graph of steps (EXECUTION, CREATE_TASK, SCRIPT, LLM, BRIDGE_CALL, AGENT) that runs as a project Activity. Covers the flat step envelope keyed by `type`, dependsOn and action edges, per-document fan-out and routing (perDocument, ANY_BRANCH, await `?` deps), setDocumentStatus, inputOptions vs inputsSchema, per-field reference formats, the several template languages that coexist in one plan, and AGENT steps that read project properties and save downloaded files (saveStoreRef)."
 ---
 
 # Kodexa ActivityPlan authoring
@@ -26,7 +26,8 @@ steps: [...]
 ```
 
 A required `inputOptions` entry missing (or empty) in `inputs` fails the start: `missing required inputs: <names>`.
-`inputsSchema` only renders the Studio start form — never validated server-side — so declare every input in both.
+A non-empty `inputsSchema` is **enforced at start** — inputs that fail it return 400 `invalid activity inputs: …` —
+and then `inputOptions` types are not checked; without one, each `inputOptions` value is type-checked. Declare every input in both.
 
 ## The step envelope is FLAT and keyed by `type`
 
@@ -56,7 +57,7 @@ steps:
 | `SCRIPT` | JavaScript in a sandboxed VM (300 s budget) | `scriptBody`, `scriptActions`, `scriptSidecars`, `perDocument` |
 | `LLM` | a prompt via the AI gateway | `promptBody` **or** `promptTemplateRef`, `promptActions`, `outputMapping`, `perDocument` |
 | `BRIDGE_CALL` | an HTTP call to a ServiceBridge endpoint | `serviceBridgeRef`, `endpointName`, `request*` maps XOR `requestScript` |
-| `AGENT` | dispatches an agent runtime | `agentRuntimeRef` (`orgSlug/runtimeSlug`, must be READY), `prompt`, `moduleRefs` |
+| `AGENT` | dispatches an agent runtime | `agentRuntimeRef` (`orgSlug/runtimeSlug`, must be READY), `prompt`, `moduleRefs`, `saveStoreRef` |
 | `APPROVAL` | **nothing — see below** | — |
 
 Only these seven are safe. `TASK`, `BRIDGE` and `AI_PLANNER` sit outside the accepted type set and
@@ -124,6 +125,19 @@ Under routing, `conditionExpr` is evaluated per document and gains a `document` 
 `.statusLabel`, `.locked`, `.labels`, `.path`), so a root step can gate with
 `"$not(document.status in ['reviewed', 'completed'])"`; elsewhere `document.*` is inert.
 
+## AGENT steps — project properties and saved files
+
+- **A project property reaches an agent only if its template `dataOption` sets
+  `properties.agentVisible: true`** (a YAML boolean; never passwords or `developerOnly` options). Read from
+  the project's *current* template, so adding it later reaches existing projects.
+- In `prompt`, `${project.options.dataProperties.<key>}` **fails the step** when the value is unset, blank or
+  not shared; `${…<key>?}` renders `(not set)`. Frame values as data — project editors are not plan authors.
+- **`saveStoreRef` must be a DOCUMENT store bound to the project** (`orgSlug/storeSlug`; `${project.id}`
+  renders). A wrong one is refused only when the agent saves, so the step can complete with nothing saved.
+- **Saved files and notes join the activity's documents**, so later `perDocument` steps process them (a
+  parser step after the agent parses its downloads). A `conditionExpr` on `document.path` (`agent-outputs/…`)
+  excludes them **only under routing**; without routing it excludes nothing. Details: `references/step-types.md`.
+
 ## Template languages — four, in one file
 
 | Where | Language | Right | Wrong |
@@ -131,7 +145,7 @@ Under routing, `conditionExpr` is evaluated per document and gains a `document` 
 | `defaultTitleTemplate`, `defaultDescriptionTemplate` | Go text/template | `{{ .inputs.vendorId }}` | `${inputs.vendorId}` |
 | `conditionExpr`, BRIDGE_CALL `request*` values, `treatAsError`, `promptVariables`, `outputMapping` | JSONata | `"inputs.vendorId"`, literal `"'active'"` | `"$.context.vendorId"`, bare `"active"` |
 | LLM `promptBody` | FString | `Classify {docType}` | `{{ docType }}` |
-| `taskData.title/description/properties`, EXECUTION `options` | fixed `${…}` placeholders only | `"${activity.title}"` | `"{{ .inputs.vendorId }}"` — stays literal |
+| `taskData.title/description/properties`, AGENT `prompt`/`saveStoreRef`, EXECUTION `options` | fixed `${…}` placeholders only — a different set per field (`references/step-types.md`) | `"${activity.title}"` | `"{{ .inputs.vendorId }}"` — stays literal |
 | `enrichment[].inputMapping` values | plain dot-paths | `"inputs.vendorId"` | `"$.inputs.vendorId"` — resolves to null |
 
 JSONata roots: `conditionExpr` and BRIDGE_CALL maps see `{orgId, projectId, inputs, documentFamilyId,
@@ -160,16 +174,16 @@ guard the **full** path: `"$exists(steps.review.completedActionUuid) ? steps.rev
   else `POST /api/activities` returns **400**:
   `activity-plan "<slug>" is not bound to project <id>; create a project-resource binding first`.
 - Start body: `projectId` + `activityPlanRef` required, plus optional `title`, `inputs`, `triggerKind`
-  (default `MANUAL`), `documentFamilyIds`, `documentFamilyFilter`; success is 201. Also launchable from a
-  Trigger, an intake script returning `{ activityPlan: 'invoice-intake', … }`, or a SCRIPT `nextActivity`.
+  (default `MANUAL`), `documentFamilyIds`, `documentFamilyFilter`; success is 201. `activityPlanRef` is a
+  bare slug or `activity-plan://acme-corp/invoice-intake` — **`acme-corp/invoice-intake` without the scheme
+  is looked up as a slug and 404s** `ActivityPlan not found`. Also launchable from a Trigger, an intake
+  script returning `{ activityPlan: 'invoice-intake', … }`, or a SCRIPT `nextActivity`.
 
-**What the run runs over is chosen at start, not by the plan — and selecting nothing is silent.**
-`documentFamilyIds` / `documentFamilyFilter` resolve once at start, then intersect with the **document
-stores bound to the project**; a family in an unbound store is dropped there with no error either side.
-An empty result is not a failure: every `perDocument` step fans out over zero documents, settles
-COMPLETED, and the activity finishes green — so "the plan ran and nothing came out" is more often an
-empty document set than a broken step. **Assert the document count before debugging a step.** Only a
-`documentFamilyGroups` entry with `required: true` fails loudly instead, with a 400 naming the group.
+**What the run runs over is chosen at start, and selecting nothing is silent.** `documentFamilyIds` /
+`documentFamilyFilter` resolve once, then intersect with the **document stores bound to the project** (an
+unbound store's family is dropped without error). Zero documents is not a failure: every `perDocument` step
+settles COMPLETED and the activity finishes green, so **assert the document count before debugging a
+step**. Only a `documentFamilyGroups` entry with `required: true` fails loudly (a 400 naming the group).
 
 ## Declared but inert
 
@@ -180,7 +194,6 @@ Persisted, round-tripped, present in existing YAML — and read by nothing.
 | `waitForCompletion` (CREATE_TASK) | never read; the step always waits for its task to reach a DONE status |
 | `disableCache` (BRIDGE_CALL) | plumbed to the request then ignored; there is no caching layer |
 | `outputMapping` (BRIDGE_CALL) | accepted in YAML but never carried onto the runtime step, so `bridgeActions` never resolve and action edges off a BRIDGE_CALL never fire. Branch instead with a `conditionExpr` on the downstream steps, reading the always-present `steps.<slug>._statusCode` |
-| `inputsSchema` | drives the Studio start form only |
 | `approverRole`, `approvalCriteria`, all of APPROVAL | the step settles SKIPPED before anyone can act |
 | CREATE_TASK inline `actions:` | folded into `taskData.actions`, never rendered, never routable |
 | `badges[]` without `promote: true` | stays on the step; only promoted badges reach the activity |
@@ -203,6 +216,7 @@ Persisted, round-tripped, present in existing YAML — and read by nothing.
 | `promptTemplateRef: "${orgSlug}/x"` | prompt not found at run time; use the bare slug |
 | `maxParallel` on LLM/SCRIPT/BRIDGE_CALL, `perDocument` on CREATE_TASK/AGENT/APPROVAL | error at start |
 | await dep `slug?` with no `conditionExpr` | error at start (`await-no-condition`) |
+| AGENT prompt quotes a property whose option lacks `agentVisible: true` | step fails: `AGENT prompt uses project property "x", which is not shared with agents` |
 
 See `references/step-types.md` (per-type fields, runtime contexts, limits, plan-level keys),
 `references/validation.md` (every issue code) and `references/examples.md` (complete plans). Related

@@ -1,6 +1,6 @@
 ---
 name: task-template
-description: "Use when creating or editing a Kodexa task template — the org-scoped YAML behind a human review/approval task: action buttons and their status transitions, attached data forms, document upload groups, AI task naming, chat prompt, agent shortcuts, panel and button visibility, team/priority defaults, and task locking. Also use when an activity-plan CREATE_TASK step references a task template by slug."
+description: "Use when creating or editing a Kodexa task template — the org-scoped YAML behind a human review/approval task: action buttons and their status transitions, attached data forms, document upload groups, AI task naming, chat prompt, agent shortcuts, panel and button visibility, the activity Outputs panel, team/priority defaults, and task locking. Also use when an activity-plan CREATE_TASK step references a task template by slug."
 ---
 
 # Kodexa Task Template Authoring
@@ -99,6 +99,12 @@ included — so clear those by setting an explicit empty value instead.
 
 There is also **no server-side task-template validation**: the rule set is empty and the handler
 defaults to disabled. Nothing will catch any of the above for you.
+
+## The Outputs panel
+
+`metadata.properties.activityOutputs` (an object; `{}` for the defaults) adds an Outputs panel to tasks a CREATE_TASK step created. It shows markdown notes only unless
+`contentTypes` lists the files you want, such as `[application/pdf]` for PDFs an AGENT step downloaded.
+`references/fields.md`.
 
 ## Declared but inert
 

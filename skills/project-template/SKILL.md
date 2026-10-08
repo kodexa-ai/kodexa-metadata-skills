@@ -1,6 +1,6 @@
 ---
 name: project-template
-description: "Use when authoring or editing a Kodexa project-template YAML — the org-scoped blueprint that provisions a new project's stores, assistants, taxonomies, data forms, document and task status workflows, task templates, knowledge sets, activity-plan bindings, triggers, project options and parent/child lineage config"
+description: "Use when authoring or editing a Kodexa project-template YAML — the org-scoped blueprint that provisions a new project's stores, assistants, taxonomies, data forms, document and task status workflows, task templates, knowledge sets, activity-plan and service-bridge bindings, triggers, project options (including which project properties AGENT steps may read), the New Project dialog's placeholders and launchActivity, and parent/child lineage config"
 ---
 
 # Project templates
@@ -20,8 +20,9 @@ Every top-level key that exists:
 ```
 id ref template orgSlug slug type name description version publicAccess imageUrl icon overviewMarkdown
 provider providerUrl providerImageUrl deleteProtection deprecated checksum extensionPackRef helpUrl
-stores assistants taxonomies dataForms documentStatuses taskStatuses attributeStatuses taskTemplates
-activityPlans triggers knowledgeSets tags options memory linkedProjects
+projectNamePlaceholder projectDescriptionPlaceholder launchActivity stores assistants taxonomies
+dataForms documentStatuses taskStatuses attributeStatuses taskTemplates activityPlans serviceBridges
+triggers knowledgeSets tags options memory linkedProjects
 ```
 
 Keys widely seen in older templates and docs that this rule kills:
@@ -49,13 +50,14 @@ POST /api/projects
 ```
 
 - Editing a template **never** retro-applies to projects already created from it. Re-create, or edit
-  the project's resources directly. The one exception is additive: a template that **`extends`** another
-  (an overlay — see **metadata-envelope**, `references/overlays.md`) can have what it adds over its base
-  applied to an existing project with `kdx project apply-template-delta <project> --template <overlay>`
-  (`POST /api/projects/{id}/template-delta`): binds, creates sets, stores and triggers, sets options and
-  data properties, keeps the project's own values, idempotent, `--dry-run` first. Each change needs its
-  own endpoint's permission (`project-resource:bind` to bind, `trigger:create`, ...); one refused change
-  refuses the whole delta (403, nothing applied).
+  the project's resources directly. Two exceptions. AGENT steps read `dataOptions` definitions, and so
+  `properties.agentVisible`, from the project's *current* template (`references/schema.md`). And a template
+  that **`extends`** another (an overlay — see **metadata-envelope**, `references/overlays.md`) can have what
+  it adds over its base applied to an existing project with
+  `kdx project apply-template-delta <project> --template <overlay>` (`POST /api/projects/{id}/template-delta`):
+  binds, creates sets, stores and triggers, sets options and data properties, keeps the project's own values,
+  idempotent, `--dry-run` first. Each change needs its own endpoint's permission (`project-resource:bind` to
+  bind, `trigger:create`, ...); one refused change refuses the whole delta (403, nothing applied).
 - A `?templateRef=` **query parameter is ignored** — the create handler reads the body only. That is
   exactly what `kdx project create --template` sends, so it yields a bare, unprovisioned project.
 - `kdx sync push` deliberately strips `projectTemplateRef` from project creates and restores it
@@ -65,7 +67,7 @@ POST /api/projects
 
 | Outcome | Which cases |
 |---|---|
-| **Warn + skip** — project is created "successfully" with the resource missing | any unresolvable `ref:`/`templateRef:` (store, taxonomy, data form, task template, activity plan); `activityPlans:` entry with no `ref:`; **any trigger the DB rejects** (bad `activityPlanRef`, invalid `eventKind`, malformed `eventFilter`); any store, taxonomy, assistant or knowledge-set create failure |
+| **Warn + skip** — project is created "successfully" with the resource missing | any unresolvable `ref:`/`templateRef:` (store, taxonomy, data form, task template, activity plan, service bridge); `activityPlans:` or `serviceBridges:` entry with no `ref:`; a `launchActivity` that resolves to no plan in `activityPlans:`; **any trigger the DB rejects** (bad `activityPlanRef`, invalid `eventKind`, malformed `eventFilter`); any store, taxonomy, assistant or knowledge-set create failure |
 | **Hard fail — whole create rolls back, no project** | template not found; document-status create; task-status lookup/create; inline data-form create; inline task-template create |
 
 A typo in a `ref:` produces a project that looks fine and is quietly missing a store or a trigger —
@@ -91,7 +93,8 @@ copied verbatim, so `orderedDashboards: ["${orgSlug}/x"]` stores the dollar-brac
 assistant is created, so only a *later* entry in the same `assistants:` list can use it.
 
 Materialization order: options → documentStatuses → taskStatuses → dataForms → taskTemplates →
-activityPlans → triggers → knowledgeSets → stores → taxonomies → assistants → memory.
+activityPlans (then `launchActivity` resolves) → serviceBridges → triggers → knowledgeSets → stores →
+taxonomies → assistants → memory.
 
 ## Shape that works
 
@@ -100,7 +103,9 @@ slug: invoice-template
 orgSlug: acme-corp
 type: project-template          # kdx also accepts projectTemplate / project-templates
 name: "Invoice Processing"
-description: "Extract and review vendor invoices"
+description: "Extract and review vendor invoices"          # describes the TEMPLATE in the picker
+projectNamePlaceholder: "Vendor or business unit, e.g. Acme AP"  # hint in the empty name input
+launchActivity: "${orgSlug}/invoice-review-flow"           # must also be listed in activityPlans:
 
 stores:
   - slug: "${project.id}-documents"      # ${project.id}-prefix: store slugs share the ORG namespace
@@ -143,6 +148,14 @@ triggers:                                # yes, triggers CAN be embedded here
 ```
 
 Field tables per collection: `references/schema.md`. Worked templates, `options:`, troubleshooting: `references/examples.md`. Standalone store YAML — the flat wire shape, `storeType` values and the legacy `type: store` remapping — is the **store** skill. The **project** YAML is a syncable resource of its own, and its `documentStatuses:` and `projectTemplateRef` behave nothing like the template's: `references/project-yaml.md`.
+
+## The New Project dialog and `launchActivity`
+
+The dialog opens with an **empty** name and description (the template's own are not copied), and
+**Create** stays disabled until a name is typed; `projectNamePlaceholder` / `projectDescriptionPlaceholder`
+are the hints. After Create, `launchActivity` opens the New Activity dialog on that plan for the user to
+**Start**. Only the UI create flow does this — the API just returns `launchActivityPlanId` once. A plan not
+in `activityPlans:` is warned and skipped; the user is told the activity could not be opened.
 
 ## Task statuses are org rows, not a project-private workflow
 

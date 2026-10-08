@@ -68,10 +68,38 @@ metadata:
 | `enableSummarization` + `summarizePrompt` | bool + string | Runs the prompt over uploaded PDFs during task creation. The prompt is ignored unless the flag is on. |
 | `enableValidation` + `validatePrompt` | bool + string | Same pairing for validation. |
 | `showAlert`, `alertType`, `alertTitle`, `alertBody` | bool/string | Banner on the task creation form. `alertType` is `INFORMATION` (default look) or `WARNING`. |
+| `activityOutputs` | object | Adds the **Outputs** panel and toolbar indicator: what the creating activity's steps produced. See below. |
 
 Panel ids usable in `panels` / `visiblePanels` / `forms[].availablePanels`: `documentStores`,
 `properties`, `exceptions`, `navigation`, `auditNotes`, `projectNotes`, `taskNotes`, `taskTimeline`,
-`projectOverview`, `projectOptions`, `formula`, `taskDocuments`.
+`projectOverview`, `projectOptions`, `formula`, `taskDocuments`, `activityOutputs`.
+
+### `activityOutputs` — the Outputs panel
+
+```yaml
+metadata:
+  properties:
+    activityOutputs:
+      label: Research              # tab, indicator and panel header; default "Outputs"
+      itemLabel: vendor brief      # noun for one output
+      mixins: [markdown]           # default; "*" shows every output
+      contentTypes: [application/pdf]   # also show files an AGENT step saved; default none
+      indicator: true              # toolbar indicator; default true
+      notifyOnArrival: false       # toast when a step's output is ready; default false
+      steps:                       # default: one slot per AGENT step of the creating activity
+        - step: research-vendor    # plan step slug
+          label: Vendor research   # default: the step's name
+```
+
+- **The block's presence is the switch**, and it must be an object: `activityOutputs: true` shows
+  nothing; `activityOutputs: {}` turns the panel on with every default.
+- It applies only to tasks **created by an activity** (a CREATE_TASK step). A task created by hand never
+  shows the panel.
+- With the defaults only markdown notes appear. Downloaded PDFs, spreadsheets and CSVs need their
+  `contentTypes` listed.
+- It implies visibility: a `visiblePanels` whitelist does not also need `activityOutputs: true`.
+- `steps[].legacyPathGlob` (`*`/`?` over the file name) places outputs that the platform could not
+  attribute to a step.
 
 ## `metadata.forms[]`
 

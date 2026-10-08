@@ -184,6 +184,7 @@ Persisted and round-tripped, sometimes editable in the UI, but nothing in the pl
 | `typeFeatures: { selectionOptions: [...] }` | It is a taxon-level key. Stored in the forward-compat catch-all and never read — a SELECTION field with no options. |
 | Dotted group paths (`line_items.quantity`) | Parse error; segments are `/`-separated inside braces. |
 | `additionContexts` with no `chunkingStrategy: record` | Dead configuration, no warning. |
+| A root group with no `chunkingStrategy` | It chunks as `document`: the whole file is one model call, which overflows the context on a long report, and any `classificationStrategy` (`pageLabel` included) is ignored. Set `classifiedContent` to extract only the classified pages. |
 | Authoring `path:` on a taxon | Overwritten server-side from the `name` chain, and stripped on push. |
 | `taxonType: GROUP`/`INTEGER`/`DECIMAL` | Not in the API enum. Mark containers with `group: true`. |
 
