@@ -161,6 +161,15 @@ guard the **full** path: `"$exists(steps.review.completedActionUuid) ? steps.rev
   code, severity, message}]}`, always 200 — the **same** checks the start enforces, but all of them; every
   `severity: "error"` means start returns 400. The separate save-time rule set is off unless a deployment
   enables it, so a clean save proves nothing.
+- **A plan that `extends` a base** (see **metadata-envelope**, `references/overlays.md`) is validated as it
+  resolves: send `{extends, overlay, organizationId, slug}` and each issue names the overlay and the change
+  that brought its step; `resolvedSteps` comes back. Its stored steps are derived — edit `overlay.steps`.
+  If its base later changed so the overlay no longer applies, start still runs its last good resolution and
+  **marks the activity** (`metadata.overlayStale`, a *Stale overlay* badge, an `overlay.stale-resolution`
+  warning); if it refuses stale runs it returns **409 `OVERLAY_STALE`** instead — decided when it went
+  stale, from `metadata.overlayStale` in its own overlay, else from the base being saved.
+  A misspelt change key (`wiht`, `afterr`) is a 400 naming the closest modifier, never a silent
+  replacement of the list.
 - The plan must be bound to the project — a `kdxa_project_resources` binding of type `activity-plan` —
   else `POST /api/activities` returns **400**:
   `activity-plan "<slug>" is not bound to project <id>; create a project-resource binding first`.
