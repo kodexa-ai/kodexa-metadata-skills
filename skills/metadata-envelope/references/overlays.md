@@ -17,9 +17,10 @@ description: Invoice review that also audits each invoice against its purchase o
 extends: activity-plan://${org}/invoice-review-plan
 overlay:
   inputOptions:
-    - name: auditTolerance
-      type: number
-      default: 0.01
+    - insert:
+        - name: auditTolerance
+          type: number
+          default: 0.01
   steps:
     - merge: extract
       with:
@@ -51,8 +52,9 @@ Each overlay key mirrors the field it changes:
 - **a map** merges into the base's map, field by field and recursively; `null` removes a field;
   fields left out are the base's (JSON merge patch, RFC 7386);
 - **a scalar** replaces;
-- **a list of plain items** replaces the whole list (`[]` empties it);
-- **a list of changes** edits the base's list in place, in order:
+- **`{replace: [...]}`** replaces the whole list with the list it holds, taken as written
+  (`{replace: []}` empties it) — the only way to replace a list;
+- **a list** is always a list of changes, which edits the base's list in place, in order:
 
 | Change | Effect |
 |---|---|
@@ -60,21 +62,34 @@ Each overlay key mirrors the field it changes:
 | `insert: [items]` + `into: <anchor>` | appends as the last children of a tree node (data form cards and nodes) |
 | `insert: [items]` alone | appends at the end |
 | `replace: <anchor>` + `with: <item>` | replaces the item wholly; a replacement without a key keeps the replaced item's |
-| `merge: <anchor>` + `with: <fields>` | merges fields into the item: maps recurse, `null` removes, and a list is read as any overlay list is — a list of changes edits the item's list in place (`dependsOn`, a card's `children`), a list of plain items replaces it |
+| `merge: <anchor>` + `with: <fields>` | merges fields into the item: maps recurse, `null` removes, a list of changes edits the item's list in place (`dependsOn`, a card's `children`), `{replace: [...]}` gives it a new list |
 | `remove: <anchor>` or `remove: [anchors]` | removes the item |
 
-An item that carries a verb key (`insert`, `replace`, `merge`, `remove`) **is** a change, with exactly
-one verb, and every other key on it must be that verb's modifier: `before`, `after` or `into` for
-`insert`, `with` for `replace` and `merge`, none for `remove`. A list that mixes changes with plain
-items is a 400 that says which items are which. A list value whose items have a verb field cannot be
-set by merging into the item that holds it — `replace` that item.
+Every item of a list must be a change: a map with exactly one verb (`insert`, `replace`, `merge`,
+`remove`) and only that verb's modifiers — `before`, `after` or `into` for `insert`, `with` for
+`replace` and `merge`, none for `remove`. These rules hold at every depth, inside a `merge`'s `with`
+too:
 
-**Typos are errors, never items.** A misspelt modifier is a 400 naming the key, the verb, the list,
-what the verb takes and the closest one: `overlay.steps[1]: "wiht" is not a modifier of merge (the
-merge change in steps takes with) (did you mean "with"?)`. An item with no verb but a key one or two
-edits from one — beside a modifier (`mege: b` + `with`), or keyless in a keyed list (`remvoe: b` in
-`steps`) — is a 400 too (`"mege" is not a change verb (did you mean "merge"?)`). Read as items, either
-would have replaced the whole list.
+```yaml
+overlay:
+  metadata:
+    tags: {replace: [invoices, audit]}       # a new list
+  steps:
+    - merge: extract
+      with:
+        dependsOn: {replace: [receive]}      # a new dependsOn for the step
+```
+
+**Typos are errors, never a new list.** An item that is not a change — a misspelt or wrongly cased
+verb, a synonym, a plain item, an empty map — is a 400 naming it and the verb it most likely meant,
+compared after NFKC normalization, case folding and dropping invisible characters (`Merge`,
+`ｍｅｒｇｅ` and `mege` suggest `merge`; `add`/`append` suggest `insert`, `delete` `remove`,
+`update`/`patch` `merge`), and saying how to replace the whole list: `overlay.steps[0]: "delete" is
+not a change verb (did you mean "remove"?): … to replace the whole list write steps: {replace:
+[...]}`. A misspelt modifier is a 400 naming the key, the verb, the list, what the verb takes and the
+closest one (`"wiht" is not a modifier of merge … (did you mean "with"?)`). An empty list (`[]`), and
+a map or scalar given for a list, are 400s too. An error inside a `merge` names where it is
+(`overlay.steps[3].with.dependsOn[0]`).
 
 **Anchors.** A string names an item by its key; a map of `{field: value}` names the one item whose
 fields match, and a dotted field reaches into it (`{properties.title: Total}`). In a list of plain
@@ -134,8 +149,15 @@ node that wraps a card by `{props.card.id: <card id>}`.
   the delete waits and sees it). `extends: null` — alone, or with `overlay: null` — detaches an
   overlay: the overlay goes with it, the resource keeps the content it was last resolved to and
   stops following the base.
-- **Content beside `extends` is derived.** Steps (or any content) sent next to `extends` are not
-  used; the response warns when they differed. Change the overlay instead.
+- **Content is edited in the overlay.** A save of an overlay resource whose content differs from what
+  it stores, sent **without** an `overlay`, is a **409 `OVERLAY_CONTENT_IGNORED`** (the edit would be
+  lost): change the overlay, or detach (`extends: null`) to edit the content. Content sent beside an
+  `overlay` (kdx push does this) is not used, with a warning. Studio's task template, data form and
+  project template editors show an overlay resource read-only; the plan editor saves tab edits as the
+  plan's own values in its overlay.
+- **Starts lock in the same order.** An activity start of an overlay plan takes its bases, root first,
+  before the plan — the order saves and cascades use — so one transaction that starts several plans
+  (a multi-file intake) cannot deadlock a base's save.
 - `overlayResolution` is server-written (base id and ref, chain, time, the list changes the overlay
   made, and when stale: the error, the save that caused it, the strict mode) and never accepted. An
   activity's plan snapshot keeps only the base, its `changeSequence`, the resolution time and whether
@@ -159,14 +181,18 @@ node that wraps a card by `{props.card.id: <card id>}`.
 
 A project template applies only at project create. For projects made from a base template, apply
 what an overlay template adds: `kdx project apply-template-delta <project> --template <overlay>`
-(or `POST /api/projects/{id}/template-delta`). It binds the plans, task templates, data forms,
+(or `POST /api/projects/{id}/template-delta`). The template (and `since`) must be one the caller can
+read (`project-template:read`) in the project's organization — one they cannot read, a missing one and
+another organization's all get the same 404. Refs resolve in the project's organization only, live rows
+only, as the bind endpoint resolves them (another organization's ref is "not found", with no id). It binds the plans, task templates, data forms,
 service bridges and stores the overlay adds, creates its inline stores, knowledge sets and triggers,
 and adds or updates its option definitions and data properties. It only adds; a data property the
 project set to its own value is kept unless `overwriteDataProperties`. Idempotent, one transaction,
 `--dry-run` reports without writing. Assistants, statuses and tags are reported as not applied, as
 is a knowledge set whose slug the organization already uses for another project's set (give a
 template's set a per-project slug such as `invoices-${project.id}`). A stale overlay template is a
-409 `OVERLAY_STALE`.
+409 `OVERLAY_STALE`. The project row is locked first and options are merged key by key, so concurrent
+applies keep each other's keys.
 
 It needs `project:update`, and each change is authorized as its own endpoint authorizes it:
 
@@ -174,9 +200,10 @@ It needs `project:update`, and each change is authorized as its own endpoint aut
 |---|---|
 | bind a plan, task template, data form, service bridge, data definition or store | `project-resource:bind` on the project, and a resource of the project's organization (as `POST /api/project-resources/bind`) |
 | create an inline store | `document-store:create` / `data-store:create`, and `project-resource:bind` |
-| create a knowledge set | `knowledge-set:create` |
+| create a knowledge set | `knowledge-set:create`, plus `knowledge-feature:create` for a feature it creates and `knowledge-item:create` for its items |
 | create a trigger | `trigger:create` (and `trigger:schedule` for a schedule trigger) |
 
 The whole delta is planned first; one change the caller may not make refuses it all — dry run
 included — with **403 `FORBIDDEN`**, nothing applied, `details.refused` listing each refused change
-and the permission it needs. A binding to another organization's resource is refused the same way.
+and the permission it needs; a refused change to a resource the caller cannot read appears only as "a
+change you may not make", with no ref or id.
