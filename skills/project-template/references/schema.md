@@ -179,9 +179,16 @@ triggers:
     activityPlanRef: "activity-plan://${org}/invoice-review-flow"   # scheme REQUIRED here
     enabled: true
     metadata: {}
+  - slug: weekly-review-sweep
+    name: "Weekly review sweep"
+    eventKind: schedule
+    triggerMetadata: { cron: "0 6 * * MON", timezone: America/New_York, jitterSeconds: 900 }
+    activityPlanRef: "activity-plan://${org}/invoice-review-flow"
 ```
 
 `slug`, `name` and `activityPlanRef` are the only trigger fields that take `${...}` substitution.
+`triggerMetadata` is copied verbatim onto the trigger. It is accepted only on `schedule` triggers,
+where it must be a valid `{cron, timezone, jitterSeconds}`; the template write checks both.
 
 ## `assistants:`
 
