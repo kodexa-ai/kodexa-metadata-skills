@@ -159,8 +159,9 @@ or a field match) edits the base's list in order. The server resolves it **on sa
 every save of the base**, storing the resolved resource beside the delta. Load-bearing facts:
 envelope keys (`slug`, `name`, `description`, flags) stay at the top level, never in `overlay`;
 content sent beside `extends` is derived and not used; a base change that breaks an overlay leaves
-it on its last good resolution with `overlayResolution.error`, and **such a plan cannot start**
-until fixed; a base with live overlays cannot be deleted. Full language and rules:
+it on its last good resolution with `overlayResolution.error`; **an activity plan keeps running that
+resolution, each activity marked stale** (`metadata.overlayStale: refuse` refuses instead, 409); a base
+with live overlays cannot be deleted. Full language and rules:
 `references/overlays.md`.
 
 ## Where the file lives

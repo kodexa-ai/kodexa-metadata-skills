@@ -94,7 +94,12 @@ node that wraps a card by `{props.card.id: <card id>}`.
 - **When the base is saved**, its overlays are re-resolved in the same transaction. One the change
   breaks keeps its **last good resolution** and records the reason in
   `overlayResolution.error`; the base's save still succeeds, with a warning. **An activity plan in
-  that state cannot start (409 `OVERLAY_STALE`)** until its overlay or the base is fixed and saved.
+  that state keeps running its last good resolution**: each activity started from it records
+  `metadata.overlayStale` (the plan, the base and its change, the error), carries a *Stale overlay*
+  badge, and the start's response warns (`overlay.stale-resolution`). The validate endpoint (given the
+  plan's `id`) and the plan editor keep reporting it until the overlay or the base is fixed and saved.
+  **Strict mode:** a plan whose `metadata` sets `overlayStale: refuse` is refused instead
+  (409 `OVERLAY_STALE`).
   This is what lets one deploy change a base and its overlays in either order.
 - **Deleting a base** that live overlays extend is a 409. `extends: null` detaches an overlay: it
   keeps the content it was last resolved to and stops following the base.

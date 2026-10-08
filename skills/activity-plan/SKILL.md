@@ -150,7 +150,9 @@ guard the **full** path: `"$exists(steps.review.completedActionUuid) ? steps.rev
 - **A plan that `extends` a base** (see **metadata-envelope**, `references/overlays.md`) is validated as it
   resolves: send `{extends, overlay, organizationId, slug}` and each issue names the overlay and the change
   that brought its step; `resolvedSteps` comes back. Its stored steps are derived — edit `overlay.steps`.
-  If its base later changed so the overlay no longer applies, start returns **409 `OVERLAY_STALE`**.
+  If its base later changed so the overlay no longer applies, start still runs its last good resolution and
+  **marks the activity** (`metadata.overlayStale`, a *Stale overlay* badge, an `overlay.stale-resolution`
+  warning); with `metadata.overlayStale: refuse` it returns **409 `OVERLAY_STALE`** instead.
 - The plan must be bound to the project — a `kdxa_project_resources` binding of type `activity-plan` —
   else `POST /api/activities` returns **400**:
   `activity-plan "<slug>" is not bound to project <id>; create a project-resource binding first`.
