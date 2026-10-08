@@ -111,8 +111,8 @@ is no third place to forget.
 ## A known problem: this documentation exists more than once
 
 At the time of the 2026-08 audit, three near-duplicate bodies of Kodexa metadata documentation
-had drifted apart — this repository, a partial copy inside the platform monorepo, and a more
-actively maintained set shipped in the Kodexa agent container. A fourth, the developer site,
+had drifted apart — this repository, a partial copy inside the platform monorepo (since replaced by
+a pointer to this repository), and a more actively maintained set shipped in the Kodexa agent container. A fourth, the developer site,
 carries overlapping material and is upstream of some of it.
 
 They disagreed, and each was independently wrong about different things. Neither of the other

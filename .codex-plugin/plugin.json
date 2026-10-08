@@ -1,6 +1,6 @@
 {
   "name": "kodexa-metadata-skills",
-  "version": "2.1.0",
+  "version": "2.3.0",
   "description": "Skills for authoring Kodexa platform metadata: data definitions, activity plans, task templates, triggers, data forms, modules, knowledge sets, intakes, service bridges and more",
   "author": {
     "name": "Kodexa",
