@@ -419,7 +419,7 @@ See the `project-template` skill for the surrounding file.
 | Partial `knowledgeItems:` array | Every server item not in the array is **deleted**. |
 | `active: true` on a knowledge set | Ignored; the set keeps whatever `status` it had. |
 | `setType:` omitted | `set_type` is persisted as the envelope value, e.g. `"knowledgeSet"`. |
-| `featureUuid` / `clauses` in a set file | Not knowledge-set fields; dropped. Use `featureExpression`. |
+| `featureUuid` / `clauses` in a set file | Not knowledge-set fields; dropped. Use `featureExpression`. In a project template, `clauses` is refused (from 2026.14). |
 | `options:` wrapped as `{options: [...]}` | Editor shows "No configuration options available" and hides every field. |
 | `type: text` for a prompt body | One-line input, no `attachment://` rendering, no server-side image repair. Use `markdown`. |
 | Underscore in a slug | `400 invalid slug` — only `[a-z0-9-]`. |

@@ -165,7 +165,7 @@ type: knowledge-set
 slug: acme-prompts
 orgSlug: acme-corp
 name: Acme prompt overrides
-featureExpression:                       # eligibility rule; a `clauses:` list is legacy and ignored
+featureExpression:                       # the eligibility rule; `clauses:` is not a knowledge-set field
   type: FEATURE
   slug: acme
 features:

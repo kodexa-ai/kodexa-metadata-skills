@@ -250,23 +250,22 @@ knowledgeSets:
     description: "Route invoices by vendor"
     setType: extraction          # free-form discriminator; no enum server-side
     features:
-      - uuid: "00000000-0000-4000-8000-000000000010"   # local handle, referenced by clauses below
-        slug: high-value                               # LOOKUP key only, not the created slug
+      - slug: high-value                               # LOOKUP key only, not the created slug
         featureTypeRef: "kodexa/numeric-feature"
         properties: { field: total_amount, operator: ">", threshold: 10000 }
         active: true
-    clauses:
-      - features:
-          - { featureUuid: "00000000-0000-4000-8000-000000000010", positive: true }
     knowledgeItems: []
-    featureExpression: {}
+    featureExpression:                                 # copied to the set as written
+      type: FEATURE
+      slug: high-value
 ```
 
-A clause feature is matched against the `uuid` values declared in this template's own `features:`
-list — a `featureUuid` with no matching entry is dropped without a warning. A feature is first looked
-up by `slug` in the org; when that misses, `featureTypeRef` + `properties` create one whose slug is
-**computed from the feature type and properties**, not from the `slug` you authored. Feature, clause
-and item semantics are in the **knowledge-system** skill.
+A feature is first looked up by `slug` in the org; when that misses, `featureTypeRef` +
+`properties` create one whose slug is **computed from the feature type and properties**, not from
+the `slug` you authored. `featureExpression` is copied to the set unchanged, so its slugs must be
+the features' stored slugs: the example matches only when `high-value` already exists in the org.
+A `clauses:` key on a knowledge set is refused from platform 2026.14 (earlier releases created
+clause rows from it). Feature, expression and item semantics are in the **knowledge-system** skill.
 
 ## `options:`
 

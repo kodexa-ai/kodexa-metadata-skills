@@ -193,5 +193,5 @@ Persisted and round-tripped, read by nothing that changes behaviour:
 - **Set metadata `template`, `deprecated`, `publicAccess`, `extensionPackRef`** — inherited columns, no knowledge behaviour.
 - **`AppliedKnowledge` (`/api/applied-knowledges`, per item)** — a CRUD surface nothing in the platform's own processing path writes. Per-application tracking
   is `AppliedKnowledgeSet`.
-- **`clauses` / `featureUuid`** — the pre-expression matching form, a fallback only when `featureExpression` is null; `featureUuid` is a project-template
-  shape. Author neither.
+- **`clauses` / `featureUuid`** — the retired pre-expression matching form. From 2026.14 nothing evaluates clauses and a project template that names
+  `clauses` is refused; before that they were a fallback only when `featureExpression` is null. Author neither.

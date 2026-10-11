@@ -72,17 +72,27 @@ compare it with the file.
 
 ---
 
-## 3. Legacy clauses
+## 3. Retired: clauses
 
 Before `featureExpression` existed, matching used clause rows: clauses OR'd, features within a
 clause AND'd, each feature positive (must be present) or negative (must be absent); an empty clause
-never matches. That form is still evaluated, but **only when `featureExpression` is null**, and it
-lives in its own REST resources (`/api/knowledge-clauses`, `/api/knowledge-clause-features`) whose
-feature link field is `featureId`.
+never matches. From platform **2026.14**, eligibility is `featureExpression` and nothing else:
+
+- The upgrade converts every set that still relied on clauses into the equivalent expression — an
+  `OR` with one `AND` per clause, holding a `FEATURE` node for each required feature and a
+  `NOT` around a `FEATURE` node for each excluded one — and stops if a clause cannot be converted
+  exactly.
+- Nothing evaluates clauses, and `/api/knowledge-clauses` and `/api/knowledge-clause-features` are
+  gone.
+- The stored expression is either absent (the set is never eligible) or an `AND`, `OR`, `NOT` or
+  `FEATURE` node; the database refuses anything else.
+- A project template whose `knowledgeSets[]` entry has a `clauses` key, even an empty list, is
+  refused with a `400` that points to `featureExpression`.
+
+On earlier releases clauses are still evaluated, but only when `featureExpression` is null.
 
 Do not author clauses, and do not put `clauses:` or `featureUuid:` in a knowledge set file — a
-knowledge set has no such field. (`featureUuid` is a project-template sub-schema shape.) A feature's
-`uuid` column plays no role in expressions or clause references.
+knowledge set has no such field. A feature's `uuid` column plays no role in expressions.
 
 ---
 
@@ -131,8 +141,10 @@ NULL, and the set quietly becomes org-wide.
 see "Scoping" above):
 
 1. Loads the family's attached features and the scoped sets.
-2. Evaluates each set — expression first, legacy clauses as fallback — and sorts the outcome into
-   new matches, still-matching, snapshot-changed, and no-longer-matching.
+2. Evaluates each set's expression (on releases before 2026.14, a set with no expression falls back
+   to its clauses) and sorts the outcome into new matches, still-matching, snapshot-changed, and
+   no-longer-matching. A slug that does not resolve in the organization evaluates false; from
+   2026.14 the server logs the set as an error each time.
 3. Writes an applied-knowledge-set row per newly applied set, pinned to that set's
    `currentSnapshotId`.
 4. Attaches any cascade features from the set's items.
