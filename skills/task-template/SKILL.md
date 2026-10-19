@@ -145,6 +145,7 @@ nothing at runtime. Do not delete them from files that already have them; do not
 | Mistake | What happens |
 |---|---|
 | One action declares `uuid` and `slug` with different values | Activity starts referencing this template's actions fail loudly. |
+| Copying a template to change one action or one `properties` key | Write it as an overlay instead: `extends: task-template://${org}/<base>` and `overlay.metadata.actions: [{merge: lock, with: {…}}]` — it follows the base. Its stored `metadata` is derived; edit the overlay. See **metadata-envelope** `references/overlays.md`. |
 | `properties.targetStatus` | Button saves but never transitions; downstream steps never fire. |
 | `properties.setAttributes` | Nothing is written. Use the `attributes` array. |
 | `name:` without `title:` | Activity-created tasks get a blank title, and `{templateName}` renders empty on both the activity and intake AI-naming paths. |

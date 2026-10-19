@@ -189,6 +189,7 @@ are disabled, logged, or returned as a 400:
 | Editing or writing `cards` | Retired V1. Run `kdx data-form upgrade` and edit the `nodes` it writes; a `cards` form pushed as it is stays V1 until the platform next starts |
 | An empty `nodes` | The form renders nothing, with no error |
 | Reading `ctx.dataObjects` in a `shortcuts` script | A shortcut's `ctx` is only `{shortcut}` — reach data through `bridge` |
+| Copying a form to add links on a few rows | Write an overlay: `extends: data-form://${org}/<base>` and `overlay.nodes: [{merge: <node key>, with: {props: {…}}}]` (anchors search the whole tree; `into:` appends children; an inserted node needs its own `key`; a node without one is named by a map of its fields, such as `{props.tagPath: invoice/total_amount}` or a converted card's `{props.card.id: <card id>}`). Write it against `nodes`, never `cards`. The stored form is derived; see **metadata-envelope** `references/overlays.md`. |
 
 ## References
 

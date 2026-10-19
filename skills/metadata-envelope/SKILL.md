@@ -1,6 +1,6 @@
 ---
 name: metadata-envelope
-description: "Use when authoring or debugging any Kodexa resource YAML — the shared slug / name / orgSlug / type envelope twelve org-scoped resource types embed, the flatten rule that makes authored YAML flat, what a slug is actually checked against, the changeSequence optimistic lock, the computed ref and uri, and where each file lives in a metadata repo."
+description: "Use when authoring or debugging any Kodexa resource YAML — the shared slug / name / orgSlug / type envelope twelve org-scoped resource types embed, the flatten rule that makes authored YAML flat, what a slug is actually checked against, the changeSequence optimistic lock, the computed ref and uri, extends + overlay (a plan, task template, data form or project template written as a delta over a base), and where each file lives in a metadata repo."
 ---
 
 # Kodexa Metadata Envelope
@@ -148,6 +148,26 @@ So **never hand-write `changeSequence` into a resource file.** `kdx sync pull` s
 map at every depth for exactly this reason, recording the watermark in
 `.sync-state/<env>/<org-slug>.yaml` instead; push compares against that file and skips a resource
 whose server sequence has moved on, which `--force` overrides.
+
+## `extends` + `overlay` — a resource as a delta
+
+An `activity-plan`, `task-template`, `data-form` or `project-template` may name a base of its own
+kind in **its own organization** (`extends: activity-plan://${org}/invoice-review-plan`) and carry
+only what it changes in `overlay`: maps merge, scalars replace, a list is always a list of changes
+(`insert` with `before`/`after`/`into`, `replace`, `merge`, `remove`, each anchored on a key or a
+field match) that edits the base's list in order, and `{replace: [...]}` is the only way to replace a
+whole list (`{replace: V}` replaces only a value of its own type; a field named `replace` is written
+`\replace`). The server resolves it **on save and again on
+every save of the base**, storing the resolved resource beside the delta. Load-bearing facts:
+envelope keys (`slug`, `name`, `description`, flags) stay at the top level, never in `overlay`;
+content sent beside `extends` is derived, so an edit of it is a 409 `OVERLAY_CONTENT_IGNORED` (send
+the overlay alone); a base change that breaks an overlay leaves
+it on its last good resolution with `overlayResolution.error`; **an activity plan keeps running that
+resolution, each activity marked stale** (a plan that refuses stale runs — `metadata.overlayStale: refuse`
+in its overlay, else in the base being saved — gets 409 instead); a misspelt change key is a 400 naming
+the closest one, never a silent whole-list replacement; a base with live overlays cannot be deleted.
+Full language and rules:
+`references/overlays.md`.
 
 ## Where the file lives
 
