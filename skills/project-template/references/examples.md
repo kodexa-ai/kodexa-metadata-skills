@@ -156,7 +156,9 @@ contract in full.
 | `templateRef:` on a store, expecting seeded content | Resolved and stamped onto an internal column nothing reads. No documents, metadata or configuration are copied. |
 | A `documentStatuses` entry with a `statusType` outside `UNRESOLVED`/`RESOLVED` | Decodes to `UNRESOLVED` with no error. |
 | An inline taxon with only a `label` | `name`, `externalName` and `valuePath` are the required taxon fields; a label-only taxon is created but addresses nothing. |
-| `taxons:` or `cards:` written as a mapping | Decodes to zero taxons / cards; the error is swallowed and the resource is created empty. |
+| `taxons:` written as a mapping | Decodes to zero taxons; the error is swallowed and the data definition is created empty. |
+| An inline data form's `nodes:` written as a mapping | The whole create fails and rolls back. |
+| An inline data form with `cards:` | The retired V1 tree. Convert the file with `kdx data-form upgrade`; the inline form is then written as `nodes:` (the **data-form** skill). |
 | Embedding a trigger whose plan is not in `activityPlans:` | The trigger is created but never runs; start-activity rejects the unbound plan with HTTP 400. |
 | Leftover `${...}` in a trigger's `activityPlanRef` | Write-time validation error — and it only warns, so the trigger is silently not created. |
 | `eventKind: task_created` | Persists, never fires. Use `task_status_changed`, `document_locked` or `knowledge_set_updated`. |

@@ -90,11 +90,25 @@ dataForms:
   - slug: "${project.id}-review"       # or create one inline
     name: "Invoice Review"
     entrypoints: [documentFamily]      # consumed values: documentFamily, workspace
-    cards: []                          # MUST be a list; a mapping yields a card-less form, silently
+    nodes:                             # the V2 component tree; MUST be a list
+      - component: v2:panel
+        props:
+          title: Invoice
+          groupTaxon: invoice          # children repeat per `invoice` data object
+        children:
+          - component: v2:attributeEditor
+            props:
+              tagPath: invoice/invoice_number   # `tagPath`, never the V1 `taxon`
+              label: Invoice Number
 ```
 
 `templateRef:` on a data form is read by nothing — an entry using it falls into the inline branch with
-an empty name and slug. `description:` is not persisted for inline forms. Card structure is in the
+an empty name and slug. Only `name`, `slug`, `entrypoints` and `nodes` reach an inline form (and the
+retired `cards`, below): `description:` is not persisted, and nor is any other data-form field
+(`scripts`, `shortcuts`, `tabOrder`, ...) — a form that needs them is a data-form resource bound with
+`ref:`. A `nodes:` that is not a list fails the whole create. Inline `cards:` is the retired V1 tree:
+`kdx data-form upgrade` converts a template file's `dataForms[].cards` to `nodes`, and the platform
+converts stored templates when it starts. The `nodes` tree and its components are in the
 **data-form** skill.
 
 ## `documentStatuses:`

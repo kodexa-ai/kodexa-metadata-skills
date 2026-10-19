@@ -1,6 +1,6 @@
 ---
 name: data-form
-description: "Use when creating or editing a Kodexa data form — the schema-driven review panel that shows and corrects extracted document data. Covers the V2 `nodes` tree and its `v2:*` components, legacy V1 `cards`, `tagPath` binding, `entrypoints`, form scripts and the bridge, keyboard shortcuts and declarative tab order."
+description: "Use when creating or editing a Kodexa data form — the schema-driven review panel that shows and corrects extracted document data. Covers the V2 `nodes` tree and its `v2:*` components, converting a retired V1 `cards` form with `kdx data-form upgrade`, `tagPath` binding, `entrypoints`, form scripts and the bridge, keyboard shortcuts and declarative tab order."
 ---
 
 # Kodexa data forms
@@ -10,28 +10,22 @@ beside a document: which extracted fields appear, in what layout, which are
 editable, and which exceptions surface. Author it as YAML in
 `data-forms/<slug>.yaml` and apply it with `kdx sync push`.
 
-## Which schema am I in?
+## One format: `nodes`
 
-Two renderers ship side by side. **The array you use picks the renderer:**
+A form's layout is the V2 component tree under `nodes`, and that is the only format to write.
 
-| Your YAML has | Renderer | Component names |
-|---|---|---|
-| `nodes: [...]` | V2 schema renderer | `v2:panel`, `v2:attributeEditor`, … |
-| `cards: [...]` | V1 card renderer | `cardPanel`, `dataAttributeEditor`, … (bare, no prefix) |
+**V1 (`cards`) is retired.** The platform converts every stored V1 form, and every V1 inline form
+in a project template, to `nodes` each time its API starts, keeping the original in
+`kdxa_data_forms_v1_backup`. Files are converted with `kdx data-form upgrade <file|dir>`: data-form
+resources with top-level `cards`, and project templates' `dataForms[].cards`. With `--check` it
+writes nothing, lists each V1 form left and exits non-zero while any remain. **Met a `cards` file?
+Convert it, then edit the `nodes`** — never edit or author `cards`. A `cards` form pushed as it is
+stays V1 until the platform next starts.
 
-Detection is `version == "2"` **OR** a non-empty `nodes` array. So:
-
-- `version` is the form's own domain version string, not the schema selector.
-  A form with `version: 1.0.0` and a `nodes` array renders as V2 — that is the
-  common shape in the wild.
-- **Setting `version: "2"` on a `cards` form blanks it.** Detection flips to V2,
-  V2 reads `nodes` (empty), and the form renders nothing. No error.
-- V1 forms get **no** `scripts`, `shortcuts`, `scriptTriggers`, `eventTriggers`
-  or `tabOrder` — those are only handed to the V2 renderer. Adding them to a
-  `cards` form is silently ignored.
-
-Author new forms as V2. Edit existing V1 forms in place — see
-`references/v1-legacy.md`.
+**`nodes` decides the renderer.** A form renders from `nodes` when `nodes` is non-empty, or when
+`version` is exactly `"2"`. Otherwise `version` is the form's own version string (`version: 1.0.0`
+beside `nodes` is the common shape). A form with an empty `nodes` and no `cards` renders nothing,
+with no error.
 
 ## The record
 
@@ -95,25 +89,32 @@ bound there (manifest `projects.<slug>.linked['data-form']`, or Project Settings
 
 Rules that fail silently when broken:
 
-- **`tagPath`, not `taxon`.** `taxon` is the V1 property name. A `v2:*` node
+- **`tagPath`, not `taxon`.** `taxon` is the retired V1 card property. A `v2:*` node
   with `props.taxon` leaves `tagPath` undefined and the editor throws while
   computing its label — the node renders nothing.
 - **The taxon at that path must carry an `id`.** An editor resolves through the
   taxon, so a taxonomy applied from YAML with no taxon ids binds nothing and
   every field reads `No data` — however correct the `tagPath` is. See
   **data-definition**.
-- **Only five components accept `children`:** `v2:panel`, `v2:tabs`, `v2:row`,
-  `v2:col`, `v2:serviceBridgeView`. Children nested under any other component
-  are dropped without a warning.
+- **Only seven components accept `children`:** `v2:panel`, `v2:cardPanel`,
+  `v2:cardGroup`, `v2:tabs`, `v2:row`, `v2:col`, `v2:serviceBridgeView`.
+  Children nested under any other component are dropped without a warning.
 - **`bindings` win over `props`** on a key collision. A binding whose expression
   throws yields `undefined` — it does *not* fall back to the static prop.
-- **Never put a `card:`-prefixed component under `nodes`.** It resolves to a V1
-  card, which needs a `card` object and `viewId` the V2 renderer never supplies.
 - Repetition comes from components, not from a loop directive: `v2:panel` with
   `groupTaxon` repeats its children per data object; `v2:grid` / `v2:table`
   render one row each.
 
-Node fields: `references/v2-schema.md`. All 26 components: `references/v2-components.md`.
+**A converted form** uses shapes you would not write from scratch. Each V1 card is a shell
+node, `{component: card:<type>, props: {card: <the card, unchanged>}}`, which renders the same card
+component as before and is configured inside `props.card` (V1 names: `properties`, `taxon`, …).
+V1's rows are a `v2:row` (`gap: 12`) of `v2:col`s, and its containers are native containers keyed
+by the card's `id`: `cardPanel` → `v2:cardPanel`, `cardGroup` → `v2:cardGroup`, `tabs` → `v2:tabs`
+(tab labels and icons in `props.tabs`). Edit a shell in place, and build anything new from `v2:*`
+components; a shell is how a card with no `v2:` counterpart (the transposed grids and the trees,
+for example) stays in a form.
+
+Node fields: `references/v2-schema.md`. All 28 components and the `card:` shell: `references/v2-components.md`.
 
 ## Scripts
 
@@ -179,23 +180,22 @@ are disabled, logged, or returned as a 400:
 | Mistake | What happens |
 |---|---|
 | **Every field renders `No data`** while the data export is full | Not a form problem. The taxons have no `id`, and a form cannot bind an id-less taxon — see **data-definition**, `references/schema.md`, "Taxon `id`". The chrome mounting normally is what makes this read as a form bug. |
-| `card:*` components under `nodes` | Resolves to a V1 card with no `card`/`viewId` → broken or empty render |
 | `props.taxon` on a `v2:*` node | `tagPath` undefined → editor throws, node disappears |
 | `kodexa.data...` inside a script | `ReferenceError`, swallowed → silent no-op. Use the `bridge` parameter |
 | Calling the bridge from an inline `type: script` handler | Only `ctx` is in scope there. Use a named script via `type: scriptRef` |
 | Assuming an omitted `bridge.permissions` locks things down | It grants every capability |
 | No `entrypoints` | Saves fine, then appears on no surface — and can break the viewer's form menu outright |
 | Both `tabOrder` and `tabOrderGroups` | Mutually exclusive; `tabOrderGroups` wins and `tabOrder` is discarded |
-| `version: "2"` on a `cards` form | Renders blank |
+| Editing or writing `cards` | Retired V1. Run `kdx data-form upgrade` and edit the `nodes` it writes; a `cards` form pushed as it is stays V1 until the platform next starts |
+| An empty `nodes` | The form renders nothing, with no error |
 | Reading `ctx.dataObjects` in a `shortcuts` script | A shortcut's `ctx` is only `{shortcut}` — reach data through `bridge` |
 | Copying a form to add links on a few rows | Write an overlay: `extends: data-form://${org}/<base>` and `overlay.nodes: [{merge: <node key>, with: {props: {…}}}]` (anchors search the whole tree; `into:` appends children; an inserted node needs its own `key`; a node without one is named by a map of its fields, such as `{props.tagPath: invoice/total_amount}` or a converted card's `{props.card.id: <card id>}`). Write it against `nodes`, never `cards`. The stored form is derived; see **metadata-envelope** `references/overlays.md`. |
 
 ## References
 
-- `references/v2-components.md` — all 26 `v2:*` components with verified props
+- `references/v2-components.md` — all 28 `v2:*` components with verified props, and the `card:` shell
 - `references/v2-schema.md` — node fields, data context, precedence, conditions
 - `references/scripting.md` — runtimes, bridge surface, triggers, shortcuts, tab order
-- `references/v1-legacy.md` — the `cards` schema and the 22 card types
 - `references/examples.md` — complete, applyable form YAML
 
 ## Related skills

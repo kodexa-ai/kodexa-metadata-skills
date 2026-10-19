@@ -1,14 +1,17 @@
 # V2 component reference
 
-Twenty-six components are registered under the `v2:` namespace. Every entry in a
-`nodes` tree must use one of them, spelled `v2:<type>`. An unregistered name
-resolves to nothing and the node renders silently as empty.
+Twenty-eight components are registered under the `v2:` namespace. Every node you
+write uses one of them, spelled `v2:<type>`. An unregistered name resolves to
+nothing and the node renders silently as empty. The one other component prefix
+is `card:<type>`, the shell that carries a converted V1 card (see the end of
+this page).
 
 Props below are taken from each component's declared prop list. A prop not
 listed here does not exist — extra keys land on the DOM element or are dropped.
 
-Only `v2:panel`, `v2:tabs`, `v2:row`, `v2:col` and `v2:serviceBridgeView`
-declare child support. Children under anything else are discarded.
+Only `v2:panel`, `v2:cardPanel`, `v2:cardGroup`, `v2:tabs`, `v2:row`, `v2:col`
+and `v2:serviceBridgeView` declare child support. Children under anything else
+are discarded.
 
 ---
 
@@ -59,9 +62,12 @@ block or nested group.
 
 ### `v2:tabs`
 
-`tabs`, `mustView`. It also declares `title` and `icon`, and renders neither —
-a tab strip has no header of its own. Put a titled `v2:panel` around it if you
-want a heading.
+`tabs`, `mustView`, `sticky` (pins the tab strip to the top of the scrolling
+form), `showExceptionCounts` (counts open exceptions in each tab's grids; off by
+default) and `fillHeight` (sizes the block to its space, for cards that size
+themselves to their container, such as the transposed grids; off by default).
+It also declares `title` and `icon`, and renders neither — a tab strip has no
+header of its own. Put a titled `v2:panel` around it if you want a heading.
 
 One tab per **child node** — the tab strip is built from the default slot, not
 from `slots`. Each tab's label comes from the child's `props.title`, unless the
@@ -105,6 +111,24 @@ placeholder.
 `label`, `masterBy`. A heading that renders only inside the master instance of a
 `lineItems` panel — use it as a child of the panel to place the heading between
 the master's exceptions and its fields.
+
+### `v2:cardPanel` / `v2:cardGroup` — converted V1 containers
+
+What a V1 `cardPanel` and `cardGroup` convert to. Each runs the V1 panel or group
+itself, so a converted form looks and behaves as it did, with V2 nodes as its
+children. Their props are the V1 card properties, under the V1 names, passed
+through untouched:
+
+- `v2:cardPanel`: `title`, `subtitle`, `showHeader`, `groupTaxon`, `useTabs`,
+  `hideAdd`, `hideCollapse`, `hideExceptions`, `showChildExceptions`,
+  `exceptionSticky`, `pageSize`, `maxHeight`, `filters`, `lineItemIndicator`,
+  `subBillCollapsible`, `backgroundColor`, and the nested `taxonMovement`,
+  `taxonCopy`, `taxonNavigation` and `backgroundColorMapping` blocks. The
+  children render once per data object of `groupTaxon`.
+- `v2:cardGroup`: `title`, `subtitle`, `showHeader`. Its children get the data
+  object the group sits in.
+
+For a new form, use `v2:panel`.
 
 ---
 
@@ -181,9 +205,9 @@ dash. `position` is `start` or `end` (default `end`); `width` defaults to 220.
         props: { tagPath: invoice/line_items/description }
 ```
 
-`movement` takes the same value shape as V1's `taxonMovement`, but **the key is
-different** — V1 spells it `taxonMovement`, V2 spells it `movement` — so a V1
-block copied verbatim is silently ignored. Also: `sourceTaxon` must equal the
+`movement` takes the same value shape as the V1 card property `taxonMovement`,
+but **the key is different** — so a `taxonMovement` block copied from a
+converted card (`props.card.properties`) onto a `v2:grid` is silently ignored. Also: `sourceTaxon` must equal the
 grid's `groupTaxon` exactly, and the rule belongs on the grid that *displays*
 the rows being moved. A mismatch produces no button and no warning.
 
@@ -318,3 +342,34 @@ expression warns and passes the raw response through.
       bindings:
         rows: ctx.$bridgeResult
 ```
+
+---
+
+## `card:<type>` — a converted V1 card
+
+Conversion writes every V1 card that is not a container as a shell node. It
+renders the same card component V1 used:
+
+```yaml
+- component: card:taxonGrid
+  props:
+    card:                        # the V1 card, unchanged
+      id: line-items
+      type: taxonGrid
+      properties:
+        groupTaxon: invoice/line_items
+        showHeader: true
+        title: Line items
+```
+
+- The card is configured inside `props.card`, under the V1 names (`properties`,
+  `taxon`, `attributeLabel`, `taxonMovement`, …). Its nested blocks
+  (`taxonMovement`, `taxonCopy`, `taxonNavigation`, `backgroundColorMapping`,
+  a rollup grid's `children`) are deep configuration: preserve them verbatim.
+- The renderer supplies what V1 handed a card: the view id, and the data object
+  of the `v2:cardPanel` or `v2:cardGroup` instance it sits in. As in V1, a
+  card's add, delete and move events reach the `v2:cardPanel` it sits in
+  directly; inside a `v2:cardGroup` or `v2:tabs` they go nowhere.
+- A shell has no `key`. Conversion keys only the containers.
+- Prefer `v2:*` components for anything new. A shell is how a card with no `v2:`
+  counterpart stays in a form — there is no `v2:` transposed grid or tree.

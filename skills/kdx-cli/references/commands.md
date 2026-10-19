@@ -261,6 +261,28 @@ Prints the CLI version, git commit and build date.
 Generates Python dataclasses from a data-definition/taxonomy file (JSON or YAML).
 Flags: `--output-path` (default `.`), `--output-file` (default `data_classes.py`).
 
+## `kdx data-form upgrade <file|dir>...`
+
+Converts retired V1 data forms (`cards`) to V2 (`nodes`) in YAML files, with the converter the platform
+runs over stored forms when it starts: data-form resources with top-level `cards`, and project
+templates' `dataForms[].cards`. A directory is searched recursively for `.yaml` / `.yml`, skipping
+dot-directories. Nothing here talks to the platform.
+
+```bash
+kdx data-form upgrade data-forms/        # convert in place
+kdx data-form upgrade --check .          # write nothing; list V1 forms, exit non-zero while any remain
+```
+
+- Every V1 form converts to a V2 form that renders what V1 rendered, laid out as V1 laid it out. The
+  output lists, under each converted form, what the V2 form leaves out because V1 never showed it
+  (cards V1 did not render, properties V1 did not read).
+- Only a structurally broken form (`cards` that is not a list, a card that is not a map) is left as it
+  is and reported with its reasons, and the command exits non-zero.
+- A form with a non-empty `nodes` loses any `cards` beside it; nothing read them.
+- A file with nothing to convert is left byte for byte. A converted file is rewritten with two-space
+  indentation, and the new `nodes` tree comes out with sorted keys and without the comments that were
+  inside `cards`.
+
 ## `kdx knowledge`
 
 Attachments on knowledge items. `<knowledge-item-ref>` may be a UUID or a slug.
