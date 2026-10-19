@@ -188,7 +188,7 @@ are disabled, logged, or returned as a 400:
 | Both `tabOrder` and `tabOrderGroups` | Mutually exclusive; `tabOrderGroups` wins and `tabOrder` is discarded |
 | `version: "2"` on a `cards` form | Renders blank |
 | Reading `ctx.dataObjects` in a `shortcuts` script | A shortcut's `ctx` is only `{shortcut}` — reach data through `bridge` |
-| Copying a form to add links on a few rows | Write an overlay: `extends: data-form://${org}/<base>` and `overlay.cards: [{merge: <card id>, with: {properties: {…}}}]` (anchors search the whole tree; `into:` appends children; a map anchor matches a component by its fields). The stored form is derived; see **metadata-envelope** `references/overlays.md`. |
+| Copying a form to add links on a few rows | Write an overlay: `extends: data-form://${org}/<base>` and `overlay.nodes: [{merge: <node key>, with: {props: {…}}}]` (anchors search the whole tree; `into:` appends children; an inserted node needs its own `key`; a node without one is named by a map of its fields, such as `{props.tagPath: invoice/total_amount}` or a converted card's `{props.card.id: <card id>}`). Write it against `nodes`, never `cards`. The stored form is derived; see **metadata-envelope** `references/overlays.md`. |
 
 ## References
 

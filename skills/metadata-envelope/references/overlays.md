@@ -40,7 +40,7 @@ overlay:
 
 | Top level (the resource's own) | Inside `overlay` (changes to the base's content) |
 |---|---|
-| `slug`, `name`, `description`, `publicAccess`, `deprecated`, `template`, `type`, `extends` | every content field: a plan's `steps`, `inputOptions`, `inputsSchema`, `documentFamilyGroups`, `metadata`, title templates, prompts, `failureHandler`; a task template's `metadata` and `initialStatusSlug`; a data form's and project template's flat fields — a data form's `version` included, so an overlay of a V2 form is V2 (and may set `version`) |
+| `slug`, `name`, `description`, `publicAccess`, `deprecated`, `template`, `type`, `extends` | every content field: a plan's `steps`, `inputOptions`, `inputsSchema`, `documentFamilyGroups`, `metadata`, title templates, prompts, `failureHandler`; a task template's `metadata` and `initialStatusSlug`; a data form's and project template's flat fields — a data form's `nodes` tree, and its `version` too (the overlay inherits the base's and may set its own) |
 
 An envelope key inside `overlay` (`overlay.name`) is a 400. An overlay key the kind does not have
 (`overlay.stepz`) is a 400.
@@ -56,7 +56,7 @@ Each overlay key mirrors the field it changes:
   list with a list (`{replace: []}` empties it; the only way to replace a list), a map with a map,
   either where the base has none. A `V` of another type than the base's (a list for a step's
   `options` map, anything for a string) is a 400 naming the field and both types; `replace` beside
-  other keys is a 400 too, as is a keyed list (steps, cards) replaced by items that are not maps. A
+  other keys is a 400 too, as is a keyed list (steps, nodes) replaced by items that are not maps. A
   field literally named `replace` is written `\replace` (a key that starts with a backslash names
   the field without it; two keys naming one field are a 400). A key that only looks like another is
   a 400 with the key it most likely meant: one folding onto `replace` without being it (`Replace`,
@@ -69,10 +69,10 @@ Each overlay key mirrors the field it changes:
 | Change | Effect |
 |---|---|
 | `insert: [items]` + `after: <anchor>` / `before: <anchor>` | inserts beside the anchor |
-| `insert: [items]` + `into: <anchor>` | appends as the last children of a tree node (data form cards and nodes) |
+| `insert: [items]` + `into: <anchor>` | appends as the last children of a tree node (a data form's `nodes`) |
 | `insert: [items]` alone | appends at the end |
 | `replace: <anchor>` + `with: <item>` | replaces the item wholly; a replacement without a key keeps the replaced item's |
-| `merge: <anchor>` + `with: <fields>` | merges fields into the item: maps recurse, `null` removes, a list of changes edits the item's list in place (`dependsOn`, a card's `children`), `{replace: [...]}` gives it a new list |
+| `merge: <anchor>` + `with: <fields>` | merges fields into the item: maps recurse, `null` removes, a list of changes edits the item's list in place (`dependsOn`, a node's `children`), `{replace: [...]}` gives it a new list |
 | `remove: <anchor>` or `remove: [anchors]` | removes the item |
 
 Every item of a list must be a change: a map with exactly one verb (`insert`, `replace`, `merge`,
@@ -99,7 +99,7 @@ not a change verb (did you mean "remove"?): … to replace the whole list write 
 [...]}`. A misspelt modifier is a 400 naming the key, the verb, the list, what the verb takes and the
 closest one (`"wiht" is not a modifier of merge … (did you mean "with"?)`). An empty list (`[]`), and
 a map or scalar given for a list, are 400s too, as is a resolution that does not fit the resource
-(`cards[0].properties resolves to a string, where it must be a map`). An error inside a `merge` names where it is
+(`nodes[0].props resolves to a string, where it must be a map`). An error inside a `merge` names where it is
 (`overlay.steps[3].with.dependsOn[0]`).
 
 **Anchors.** A string names an item by its key; a map of `{field: value}` names the one item whose
@@ -110,17 +110,52 @@ values (`dependsOn`, `entrypoints`) a string names the value. Before keys are co
 `activity-plan://acme-corp/invoice-review-plan` name one binding); a bare slug names a ref by its last
 segment. An anchor that matches nothing, or more than one item, is a 400 naming the change
 (`overlay.steps[2]: no step is "extract"`). So is an `insert` — or a change nested in a `merge` —
-that gives the list a key it already has, anywhere in a tree (a card's `children` included).
+that gives the list a key it already has, anywhere in a tree (a node's `children` included), and an
+item inserted into a keyed list without its key (`an inserted node needs its key or ref`).
 
 | Kind | Keyed lists (key) |
 |---|---|
 | `activity-plan` | `steps` (slug), `inputOptions` (name), `documentFamilyGroups` (name) |
 | `task-template` | `metadata.actions` (slug, uuid or label), `metadata.forms` (dataFormRef) and each form's `actions`, `metadata.options` (name), `metadata.documentFamilyGroups` (name), `metadata.agentShortcuts` (id) |
-| `data-form` | `cards` (id) and `nodes` (key or ref) as trees, searched at any depth; the rows of a card a V2 node wraps (`props.card.children`, id); `options`, `views`, `actions`, `tabOrderGroups` (name); `tabOrder` (path); `shortcuts` (key) |
+| `data-form` | `nodes` (key or ref) as a tree, searched at any depth; the rows of a card a converted `card:` node wraps (`props.card.children`, id); `options`, `views`, `actions`, `tabOrderGroups` (name); `tabOrder` (path); `shortcuts` (key); and `cards` (id), the retired V1 tree (below) |
 | `project-template` | `activityPlans`, `taskTemplates`, `dataForms`, `serviceBridges`, `stores`, `taxonomies` (ref, or slug for an inline entry); `knowledgeSets` and their `knowledgeItems` (slug); `triggers` (slug); `assistants` (slug or name); `documentStatuses` (slug or status); `taskStatuses` (slug or label); `attributeStatuses` (status); `tags` (label); `options.options`, `options.dataOptions` (name) |
 
 A component with no key (a V2 node without `key` or `ref`) is named by a map of its fields — a
-node that wraps a card by `{props.card.id: <card id>}`.
+node that wraps a card by `{props.card.id: <card id>}`. A form converted from V1 keys each container
+(`v2:cardPanel`, `v2:cardGroup`, `v2:tabs`) by its old card `id` and leaves card shells without a
+key, so an overlay names a converted container by that id and a shell by `{props.card.id: …}`:
+
+```yaml
+slug: invoice-review-links
+name: Invoice review with vendor links
+extends: data-form://${org}/invoice-review
+overlay:
+  nodes:
+    - merge: invoice-panel                 # a node's key
+      with:
+        props:
+          title: Invoice (with vendor links)
+    - insert:
+        - component: v2:attributeEditor
+          key: vendor-link                 # an inserted node needs its key
+          props:
+            tagPath: invoice/vendor_url
+            label: Vendor link
+      into: invoice-panel
+    - merge: {props.card.id: line-items}   # a converted card shell
+      with:
+        props:
+          card:
+            properties:
+              showHeader: false
+```
+
+**`cards` is the retired V1 tree.** An overlay still accepts changes to it, keyed by `id`, but the
+platform converts stored forms to `nodes` when it starts, and neither that conversion nor
+`kdx data-form upgrade` rewrites an overlay's own `overlay.cards`. Against a converted base an
+anchored `cards` change no longer resolves (`cards[0]: no card is "line-items" (did the base remove or
+rename it?)`): a 400 when the overlay is saved, a stale overlay when the base is. Write data-form
+overlays against `nodes`, and rewrite any `overlay.cards` by hand.
 
 ## Resolution rules
 
