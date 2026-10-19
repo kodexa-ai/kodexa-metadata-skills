@@ -12,7 +12,7 @@ Each skill is written against the platform source: field names from the entity m
 | **assistant** | Project-scoped pipelines — `options.pipeline` steps, taxonomy refs, agent config, and when to reach for an activity plan instead |
 | **channel-type** | The Studio agent's configuration surface — `moduleRefs`, `mcpServers`, `systemPromptFragment` and built-in `skills`; not syncable, and bind-once to a channel |
 | **data-definition** | Taxonomies — taxons, data types, `semanticDefinition` extraction prompts, type features, repeating groups, validation and formulas |
-| **data-form** | Review panels — the V2 `nodes` tree and its `v2:*` components, legacy V1 `card:*` forms, scripting and the bridge calling convention |
+| **data-form** | Review panels — the V2 `nodes` tree and its `v2:*` components, converting a retired V1 `cards` form with `kdx data-form upgrade`, scripting and the bridge calling convention |
 | **intake** | Getting documents in — pointing an intake at a store, wiring it to an activity plan, upload scripts, tokens, and the source types that actually deliver |
 | **kdx-cli** | The `kdx` CLI — profiles and login, resource CRUD, `validate`/`apply`, `run`, and sync/deploy with manifests |
 | **knowledge-system** | Knowledge sets, feature types, item types and feature instances — `featureExpression` trees, computed slugs, options |
