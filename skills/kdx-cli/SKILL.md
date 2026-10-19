@@ -1,6 +1,6 @@
 ---
 name: kdx-cli
-description: "Use when running the Kodexa CLI (kdx) — logging in and managing profiles, listing/describing/deleting resources, validating and applying resource YAML, invoking declared API operations with run, pulling/pushing/deploying metadata with a sync manifest, inspecting local KDDB documents, and the project/store/task/secret/intake/document-family/knowledge command groups."
+description: "Use when running the Kodexa CLI (kdx) — logging in and managing profiles, listing/describing/deleting resources, validating and applying resource YAML, invoking declared API operations with run, pulling/pushing/deploying metadata with a sync manifest, inspecting local KDDB documents, converting V1 data forms with data-form upgrade, and the project/store/task/secret/intake/document-family/knowledge command groups."
 ---
 
 # Kodexa CLI (`kdx`)
@@ -8,8 +8,8 @@ description: "Use when running the Kodexa CLI (kdx) — logging in and managing 
 `kdx` is a kubectl-style CLI for the Kodexa platform. It discovers resource types from the server's
 OpenAPI document at runtime, so the available types follow the server you point at. Top-level
 commands: `login`, `config`, `api-resources`, `get`, `describe`, `delete`, `validate`, `apply`,
-`run`, `sync`, `document`, `knowledge`, `dataclasses`, `version`, plus the plugin groups `project`,
-`document-family`, `store`, `task`, `secret`, `intake`.
+`run`, `sync`, `document`, `knowledge`, `data-form`, `dataclasses`, `version`, plus the plugin groups
+`project`, `document-family`, `store`, `task`, `secret`, `intake`.
 
 References: `references/commands.md` (command + flag inventory), `references/sync-manifest.md`
 (sync-config, manifests, resource types, sigils), `references/troubleshooting.md` (symptom → fix).

@@ -28,8 +28,8 @@ regardless — the placement is cosmetic.
 | `name`, `description` | Display. |
 | `version` | The form's own version string. Also accepted as a V2 signal when exactly `"2"`. |
 | `entrypoints` | `documentFamily` and/or `workspace`. See SKILL.md. |
-| `nodes` | The V2 component tree. |
-| `cards` | The V1 tree. Mutually exclusive with `nodes` in practice. |
+| `nodes` | The component tree — the form. |
+| `cards` | The retired V1 tree. The platform converts it to `nodes` when it starts, and `kdx data-form upgrade` converts it in files. Do not author it; convert a file that has it. |
 | `scripts` | `{name: source}` — the only executable script map. |
 | `bridge` | `{permissions?}`. `apiBaseUrl` and `maxExecutionMs` persist but are never read. |
 | `scriptTriggers`, `eventTriggers`, `shortcuts`, `tabOrder*` | See `scripting.md`. |
@@ -43,7 +43,7 @@ regardless — the placement is cosmetic.
 | `props` | works | Static values, spread onto the component. |
 | `bindings` | works | `{propName: "<JS expression over ctx>"}`. Evaluated **after** `props` are spread, so a binding overwrites a static prop of the same name. |
 | `events` | works | See below. |
-| `children` | works | Rendered into the component's default slot — but only five components have one. |
+| `children` | works | Rendered into the component's default slot — but only seven components have one. |
 | `if` | works | JS expression over `ctx`. Falsey ⇒ the node is not mounted. |
 | `key` | works | Sibling identity when children reorder. |
 | `meta` | works | `{label, description, designOnly, category}` — design-time metadata; no runtime effect but preserved. |
