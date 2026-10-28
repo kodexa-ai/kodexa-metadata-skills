@@ -135,9 +135,9 @@ properties:
     submitLabel: "Reject"                      # default: the action label
     fields:
       - kind: attribute                        # the default kind
-        taxon: { taxonomySlug: freight-agents, taxonPath: Response/CassRejectCode }
-        label: "Cass reject code"              # default: the taxon's label
-        help: "The shipper's own codes are listed first."
+        taxon: { taxonomySlug: invoices, taxonPath: Review/RejectCode }
+        label: "Reject code"                   # default: the taxon's label
+        help: "The vendor's own codes are listed first."
         required: true
       - kind: comment
         label: "Why is this bill being rejected?"
@@ -185,8 +185,8 @@ properties:
     submitLabel: "Reject"
     dataFormRef: ${org}/reject-dialog            # a data form LINKED to the project
     requireValues:                               # Reject stays disabled until both hold a value
-      - { taxonomySlug: freight-agents, taxonPath: Response/CassRejectBaseCode }
-      - { taxonomySlug: freight-agents, taxonPath: Response/CassRejectCode }
+      - { taxonomySlug: invoices, taxonPath: Review/RejectReason }
+      - { taxonomySlug: invoices, taxonPath: Review/RejectCode }
     fields:
       - kind: comment                            # fields still render, under the form
 ```
